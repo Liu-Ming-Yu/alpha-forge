@@ -1,0 +1,14 @@
+{
+  "families": {
+    "sec_event_reaction_event_reaction_v2_sec_count_3_5_momo1_medium_momo_21d": [
+      "event_reaction_v2_sec_count_3_5_momo1_medium_momo_21d"
+    ],
+    "sec_event_reaction_event_reaction_v2_sec_count_7_9_momo1_momo3_21d": [
+      "event_reaction_v2_sec_count_7_9_momo1_momo3_21d"
+    ],
+    "sec_event_reaction_event_reaction_v2_sec_count_7_9_momo3_trend_21d": [
+      "event_reaction_v2_sec_count_7_9_momo3_trend_21d"
+    ]
+  },
+  "feature_set_version": "paper-alpha-event-reaction-v2"
+}

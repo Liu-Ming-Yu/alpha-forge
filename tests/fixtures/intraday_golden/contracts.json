@@ -1,0 +1,20 @@
+{
+  "00000000-0000-0000-0000-000000000101": {
+    "symbol": "AAA",
+    "exchange": "SMART",
+    "currency": "USD",
+    "sector": "Technology"
+  },
+  "00000000-0000-0000-0000-000000000102": {
+    "symbol": "BBB",
+    "exchange": "SMART",
+    "currency": "USD",
+    "sector": "Healthcare"
+  },
+  "00000000-0000-0000-0000-000000000103": {
+    "symbol": "CCC",
+    "exchange": "SMART",
+    "currency": "USD",
+    "sector": "Industrials"
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "economic_thesis": "A one-to-two-week-old SEC-event cadence may preserve drift when one-month and three-month price context agree.",
+  "expected_sign": "positive",
+  "expected_turnover": "medium",
+  "failure_modes": [
+    "event reaction is already priced",
+    "SEC event timing density is too sparse",
+    "price reaction proxy is unstable across regimes"
+  ],
+  "horizon_days": 21,
+  "name": "event_reaction_v2_sec_count_7_9_momo1_momo3_21d",
+  "owner": "research",
+  "required_lags": [
+    "Use only SEC event manifests and bar-derived features available at or before as_of."
+  ],
+  "risk_exposures": [
+    "single-name event risk",
+    "earnings season crowding"
+  ],
+  "source_datasets": [
+    "sec_primary_filings",
+    "daily_adjusted_ohlcv"
+  ],
+  "state": "paper",
+  "valid_universe": "15-name liquid U.S. equity validation universe",
+  "version": "paper-alpha-event-reaction-v2"
+}

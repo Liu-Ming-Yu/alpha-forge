@@ -1,0 +1,113 @@
+groups:
+  - name: quant-platform-production
+    rules:
+      - alert: QuantCycleErrors
+        expr: increase(quant_cycle_errors_total[15m]) > 3
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: More than 3 strategy-cycle errors in 15 minutes.
+
+      - alert: QuantOrderSubmitLatencyHigh
+        expr: histogram_quantile(0.95, rate(quant_order_submit_latency_seconds_bucket[10m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: P95 order-submit latency exceeded 2 seconds.
+
+      - alert: QuantFillLatencyHigh
+        expr: histogram_quantile(0.95, rate(quant_fill_latency_seconds_bucket[10m])) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: P95 signal-to-fill latency exceeded 10 seconds.
+
+      - alert: QuantEventBusDeadLetters
+        expr: quant_event_bus_dead_letter_depth > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Redis Streams dead-letter queue has unprocessed entries.
+          runbook: quant-platform event-bus sweep-dead-letters --stream <stream>
+
+      - alert: QuantReconciliationRequiresAction
+        expr: increase(quant_reconciliation_operator_action_total[30m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: Reconciliation found discrepancies requiring operator action.
+
+      - alert: QuantOperatorApiDown
+        expr: up{job="quant-platform-operator-api"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: Operator API metrics endpoint is not scrapeable.
+          runbook: quant-platform readiness report --profile paper --as-of <iso-time>
+
+      - alert: QuantBrokerHealthDegraded
+        expr: histogram_quantile(0.95, rate(quant_broker_operation_latency_seconds_bucket[5m])) > 5
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: P95 broker gateway operation latency exceeded 5 seconds for 2 consecutive scrapes.
+          runbook: docs/runbooks/broker-circuit-breaker-recovery.md
+
+      - alert: QuantPositionDriftHigh
+        expr: increase(quant_reconciliation_mismatches_total{type="position"}[15m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: Reconciliation detected broker/internal position drift.
+          runbook: docs/runbooks/kill-switch-recovery.md
+
+      - alert: QuantCashDriftHigh
+        expr: quant_cash_drift_usd > 1000
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: Cash reconciliation drift exceeded $1000 for 5 minutes.
+          runbook: docs/runbooks/kill-switch-recovery.md
+
+      - alert: QuantDBPoolExhausted
+        expr: quant_db_pool_utilization{state="checked_out"} >= 10
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: SQLAlchemy DB connection pool fully checked out — queries may be queuing.
+          runbook: docs/runbooks/database-failover-recovery.md
+
+      - alert: QuantKillSwitchActive
+        expr: quant_kill_switch_active == 1
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: Execution kill switch is active; no orders should be submitted.
+          runbook: docs/runbooks/kill-switch-recovery.md
+
+      - alert: QuantICGateFailing
+        expr: quant_text_gate_passed == 0
+        for: 1440m
+        labels:
+          severity: warning
+        annotations:
+          summary: Text-signal IC gate has been failing for more than 1 day; signal is not contributing to targets.
+
+      - alert: QuantOrderLatencyP99High
+        expr: histogram_quantile(0.99, rate(quant_order_submit_latency_seconds_bucket[10m])) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: P99 order-submit latency exceeded 500ms; broker or network may be degraded.

@@ -1,0 +1,84 @@
+# Secrets and local overrides (keep infra/config/settings.example.env tracked)
+.env
+.env.local
+.env.*.local
+
+# Virtual environments
+.venv/
+.venv-verify/
+.venv-verify-run/
+venv/
+ENV/
+env/
+
+# Bytecode and interpreter
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Packaging / install artifacts
+*.egg-info/
+*.egg
+dist/
+build/
+wheels/
+pip-wheel-metadata/
+
+# Frontend / Tauri generated artifacts
+apps/node_modules/
+apps/**/node_modules/
+apps/**/dist/
+apps/**/src-tauri/target/
+apps/**/src-tauri/gen/schemas/
+apps/operator-desktop/apps/
+
+# Typecheck, lint, test, coverage
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.hypothesis/
+.tox/
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+pytest-output.txt
+pytest_output.txt
+
+# Project data and logs (object store default: ./data/parquet)
+/data/
+/data/parquet/
+/data/parquet/backtests/
+*.parquet
+*.feather
+*.arrow
+*.log
+logs/
+backups/
+
+# Local databases
+*.sqlite3
+*.db
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Local Codex / agent tooling (not part of the library)
+.codex
+.codex/
+.claude/
+
+# Vendor-licensed data caches and derived ticker maps
+# (data/parquet/ is already covered above; explicit so it's obvious
+# the Sharadar SF1 cache and Sharadar→universe ticker map are NOT
+# checked in — anyone with the API key can regenerate them via
+# scripts/build_sharadar_ticker_map.py and scripts/pull_sharadar_sf1.py).
+infra/config/sharadar_ticker_map.json
+data/parquet/research/fundamentals/

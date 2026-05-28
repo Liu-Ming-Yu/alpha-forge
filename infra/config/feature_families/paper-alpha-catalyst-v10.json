@@ -1,0 +1,14 @@
+{
+  "families": {
+    "sec_primary_text_v10_stability_abs_text_specificity_event_surprise": [
+      "v10_stability_abs_text_specificity_event_surprise_21d"
+    ],
+    "sec_primary_text_v10_stability_abs_text_specificity_forward_outlook": [
+      "v10_stability_abs_text_specificity_forward_outlook_21d"
+    ],
+    "sec_primary_text_v10_stability_abs_text_tone_cov40_minus_vol_tone": [
+      "v10_stability_abs_text_tone_cov40_minus_vol_tone_21d"
+    ]
+  },
+  "feature_set_version": "paper-alpha-catalyst-v10"
+}

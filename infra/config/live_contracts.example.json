@@ -1,0 +1,16 @@
+{
+  "60eb064d-4568-5dab-ac1a-92548788fdd9": {
+    "symbol": "AAPL",
+    "exchange": "SMART",
+    "primary_exchange": "NASDAQ",
+    "currency": "USD",
+    "sec_type": "STK",
+    "asset_class": "EQUITY",
+    "sector": "Information Technology",
+    "active": true,
+    "lot_size": 1,
+    "con_id": 265598,
+    "adv_shares_20d": 50000000,
+    "last_close": 190.00
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "economic_thesis": "A signed range reversal component can be strengthened by a short opening-drive change.",
+  "expected_sign": "positive",
+  "expected_turnover": "high",
+  "failure_modes": [
+    "auction prints distort open or close pressure",
+    "minute-bar vendor gaps create false microstructure signals",
+    "intraday pressure proxy is unstable across volatility regimes"
+  ],
+  "horizon_days": 21,
+  "name": "intraday_v2_range_opening_band_composite_21d",
+  "owner": "research",
+  "required_lags": [
+    "Use only complete 1-minute sessions with end timestamps strictly before sample as_of."
+  ],
+  "risk_exposures": [
+    "liquidity regime",
+    "opening/closing auction concentration"
+  ],
+  "source_datasets": [
+    "canonical_1m_intraday_bars",
+    "daily_adjusted_ohlcv"
+  ],
+  "state": "paper",
+  "valid_universe": "15-name liquid U.S. equity validation universe",
+  "version": "paper-alpha-intraday-microstructure-v2"
+}

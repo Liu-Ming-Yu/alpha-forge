@@ -1,0 +1,17 @@
+{
+  "families": {
+    "intraday_microstructure_intraday_v2_range_opening_band_composite_21d": [
+      "intraday_v2_range_opening_band_composite_21d"
+    ],
+    "intraday_microstructure_intraday_v2_range_vwap_band_composite_21d": [
+      "intraday_v2_range_vwap_band_composite_21d"
+    ],
+    "intraday_microstructure_intraday_v2_short_range_vwap_opening_composite_21d": [
+      "intraday_v2_short_range_vwap_opening_composite_21d"
+    ],
+    "intraday_microstructure_intraday_v2_signed_range_expansion_band_2_3_close_pressure_21d": [
+      "intraday_v2_signed_range_expansion_band_2_3_close_pressure_21d"
+    ]
+  },
+  "feature_set_version": "paper-alpha-intraday-microstructure-v2"
+}

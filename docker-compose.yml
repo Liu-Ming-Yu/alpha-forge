@@ -1,0 +1,195 @@
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "50m"
+    max-file: "5"
+
+x-quant-platform-env: &quant-platform-env
+  QP__STORAGE__POSTGRES_DSN: postgresql+psycopg://quant:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}@postgres:5432/quant_platform
+  QP__STORAGE__REDIS_URL: redis://redis:6379/0
+  QP__STORAGE__EVENT_BUS_BACKEND: redis_streams
+  QP__STORAGE__OBJECT_STORE_ROOT: /app/data/parquet
+  QP__BROKER__HOST: ${QP__DOCKER_BROKER_HOST:-host.docker.internal}
+  QP__BROKER__PORT: ${QP__DOCKER_BROKER_PORT:-7497}
+  QP__BROKER__CLIENT_ID: ${QP__BROKER__CLIENT_ID:-985}
+  QP__BROKER__ACCOUNT_ID: ${QP__BROKER__ACCOUNT_ID:-}
+  QP__BROKER__PAPER_TRADING: ${QP__BROKER__PAPER_TRADING:-true}
+  QP__LIVE_IBKR__CONTRACTS_FILE: /app/infra/config/universe_300.json
+  # Optional secondary/tertiary EOD vendors — pass from host .env or override:
+  QP__DATA_INGEST__BAR_FETCH_FALLBACK: ${QP__DATA_INGEST__BAR_FETCH_FALLBACK:-none}
+  QP__DATA_INGEST__TIINGO_API_TOKEN: ${QP__DATA_INGEST__TIINGO_API_TOKEN:-}
+  QP__DATA_INGEST__POLYGON_API_KEY: ${QP__DATA_INGEST__POLYGON_API_KEY:-}
+  # Sharadar fundamentals (fundamentals-v1 family). Only read by the
+  # out-of-band ``scripts/pull_sharadar_sf1.py`` operator script today,
+  # but threaded through here so a future ingest container can use it
+  # without a compose edit.
+  QP__DATA_INGEST__NASDAQ_DATA_LINK_API_KEY: ${QP__DATA_INGEST__NASDAQ_DATA_LINK_API_KEY:-}
+  # LLM text-event features (off by default; QP__LLM__SHADOW_MODE_ENABLED
+  # or QP__LLM__LIVE_MODE_ENABLED gates actual extraction). Anthropic
+  # SDK reads ``ANTHROPIC_API_KEY`` directly from os.environ — pass
+  # through unprefixed.
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+  # V2 account orchestrator (disabled by default; enable for multi-engine live):
+  QP__V2__ENABLED: ${QP__V2__ENABLED:-false}
+  QP__V2__ACCOUNT_ORCHESTRATOR_ENABLED: ${QP__V2__ACCOUNT_ORCHESTRATOR_ENABLED:-false}
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: quant
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      POSTGRES_DB: quant_platform
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+          cpus: "2.0"
+        reservations:
+          memory: 256m
+    healthcheck:
+      # -d quant_platform: without an explicit DB, pg_isready defaults to a DB
+      # named after the user (here "quant"), which does not exist and floods the
+      # postgres log with FATAL lines every 10s. The check still returns success
+      # because the server responds, but the noise hides real issues.
+      test: ["CMD-SHELL", "pg_isready -U quant -d quant_platform"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: ["redis-server", "--appendonly", "yes"]
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+          cpus: "0.5"
+        reservations:
+          memory: 64m
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  quant-platform-api:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      <<: *quant-platform-env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - quant_data:/app/data
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+          cpus: "1.0"
+        reservations:
+          memory: 128m
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "if [ -n \"$${QP__API__OPERATOR_API_KEY}\" ]; then curl -sf -H \"X-API-Key: $${QP__API__OPERATOR_API_KEY}\" http://localhost:8000/health/ready; else curl -sf http://localhost:8000/health/ready; fi || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    command: ["python", "-m", "quant_platform", "serve-api", "--host", "0.0.0.0", "--port", "8000"]
+
+  quant-platform-maintain:
+    build: .
+    restart: unless-stopped
+    profiles: ["workers"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      <<: *quant-platform-env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - quant_data:/app/data
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+          cpus: "0.5"
+        reservations:
+          memory: 128m
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: ["python", "-m", "quant_platform", "maintain", "--interval", "900"]
+
+  quant-platform-paper-engine:
+    build: .
+    restart: unless-stopped
+    profiles: ["paper"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      <<: *quant-platform-env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - quant_data:/app/data
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+          cpus: "1.0"
+        reservations:
+          memory: 128m
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command:
+      [
+        "python",
+        "-m",
+        "quant_platform",
+        "supervise",
+        "--mode",
+        "paper",
+        "--execution-backend",
+        "ib-paper",
+        "--contracts-file",
+        "/app/infra/config/universe_300.json",
+        "--interval",
+        "300",
+      ]
+
+volumes:
+  postgres_data:
+  redis_data:
+  quant_data:

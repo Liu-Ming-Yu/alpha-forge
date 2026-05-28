@@ -1,0 +1,20 @@
+{
+  "families": {
+    "paper_alpha_text_v10": [
+      "v10_stability_abs_text_specificity_event_surprise_21d",
+      "v10_stability_abs_text_specificity_forward_outlook_21d",
+      "v10_stability_abs_text_tone_cov40_minus_vol_tone_21d"
+    ],
+    "paper_alpha_event_v2": [
+      "event_reaction_v2_sec_count_3_5_momo1_medium_momo_21d",
+      "event_reaction_v2_sec_count_7_9_momo1_momo3_21d",
+      "event_reaction_v2_sec_count_7_9_momo3_trend_21d"
+    ],
+    "paper_alpha_intraday_v2": [
+      "intraday_v2_range_vwap_band_composite_21d",
+      "intraday_v2_short_range_vwap_opening_composite_21d",
+      "intraday_v2_signed_range_expansion_band_2_3_close_pressure_21d"
+    ]
+  },
+  "feature_set_version": "paper-alpha-composite-v1"
+}

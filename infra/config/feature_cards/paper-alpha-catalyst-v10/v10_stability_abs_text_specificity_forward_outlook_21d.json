@@ -1,0 +1,29 @@
+{
+  "economic_thesis": "Carry forward the v9 stability-confirmed text/specificity/outlook interaction as a v10 anchor while preserving unchanged paper gates.",
+  "expected_sign": "positive",
+  "expected_turnover": "low",
+  "failure_modes": [
+    "LLM extraction drift",
+    "primary filing text is already priced",
+    "source density weakens outside the validation universe"
+  ],
+  "horizon_days": 21,
+  "name": "v10_stability_abs_text_specificity_forward_outlook_21d",
+  "owner": "research",
+  "required_lags": [
+    "Use only manifest-listed primary SEC filing text, deterministic compacted excerpts, and LLM extraction artifacts with available_at <= the daily as_of timestamp."
+  ],
+  "risk_exposures": [
+    "single-name event risk",
+    "earnings season crowding",
+    "sector outlook-cycle exposure"
+  ],
+  "source_datasets": [
+    "sec_primary_filings",
+    "llm_text_v5_features",
+    "daily_adjusted_ohlcv"
+  ],
+  "state": "paper",
+  "valid_universe": "15-name liquid U.S. equity validation universe",
+  "version": "paper-alpha-catalyst-v10"
+}

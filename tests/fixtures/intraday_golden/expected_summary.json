@@ -1,0 +1,14 @@
+{
+  "instrument_count": 3,
+  "primary_rows": 18,
+  "secondary_rows": 18,
+  "quorum_passed": true,
+  "artifact_files": [
+    "backtest_evidence_manifest.json",
+    "backtest_reconciliation.json",
+    "execution_quality.json",
+    "intraday_fills.json",
+    "run_summary.json",
+    "target_weights.json"
+  ]
+}

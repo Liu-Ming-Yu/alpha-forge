@@ -1,0 +1,66 @@
+# Build-context excludes for the project Dockerfile.
+# Keeps the image small and the build cache stable: any path matched
+# here is invisible to ``COPY`` instructions, so file churn outside
+# the source tree (data parquet, test snapshots, local secrets,
+# memory notes, etc.) does not invalidate Docker layer caches.
+
+# --- VCS / editor noise ---
+.git
+.gitignore
+.github
+.gitattributes
+.idea
+.vscode
+
+# --- Python build / test artefacts ---
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.egg-info
+*.eggs
+build
+dist
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+coverage.xml
+htmlcov
+pytest-output.txt
+
+# --- Local virtualenvs (the Dockerfile installs its own) ---
+.venv
+.venv-verify
+venv
+env
+
+# --- Local secrets and runtime state ---
+.env
+.env.local
+.env.*.local
+
+# --- Generated / runtime data (mounted as volume in compose, not baked in) ---
+data
+logs
+*.log
+
+# --- Documentation that lives in the repo but isn't needed at runtime ---
+docs
+*.md
+!README.md
+
+# --- Tests and tooling not needed in the runtime image ---
+tests
+constraints/dev-extras.txt
+notebooks
+infra/observability
+infra/monitoring
+
+# --- CI / dev workflow artefacts ---
+.tox
+.nox
+
+# --- OS junk ---
+.DS_Store
+Thumbs.db
