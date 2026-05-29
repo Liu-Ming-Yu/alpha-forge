@@ -1,0 +1,185 @@
+<svg width="1600" height="1040" viewBox="0 0 1600 1040" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Alpha Forge Architecture Map</title>
+  <desc id="desc">A production architecture poster showing Alpha Forge from signal substrate through agentic intelligence, research, account fusion, execution, governance, and durable memory.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1600" y2="1040" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FBFBFD"/>
+      <stop offset="0.58" stop-color="#F5F7FA"/>
+      <stop offset="1" stop-color="#EEF4FF"/>
+    </linearGradient>
+    <linearGradient id="ink" x1="360" y1="168" x2="1240" y2="246" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#111827"/>
+      <stop offset="1" stop-color="#020617"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0EA5E9"/>
+      <stop offset="1" stop-color="#6366F1"/>
+    </linearGradient>
+    <linearGradient id="softBlue" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F8FBFF"/>
+      <stop offset="1" stop-color="#EEF6FF"/>
+    </linearGradient>
+    <linearGradient id="softGreen" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FBFFF7"/>
+      <stop offset="1" stop-color="#F1FBE8"/>
+    </linearGradient>
+    <filter id="cardShadow" x="-20%" y="-20%" width="140%" height="150%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#0F172A" flood-opacity="0.10"/>
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0F172A" flood-opacity="0.06"/>
+    </filter>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="150%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#0F172A" flood-opacity="0.07"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748B"/>
+    </marker>
+    <style>
+      .title { font: 700 58px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: -1.8px; fill: #1D1D1F; }
+      .subtitle { font: 400 22px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: -0.2px; fill: #5F6673; }
+      .eyebrow { font: 650 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: 1.8px; text-transform: uppercase; fill: #64748B; }
+      .cardTitle { font: 700 24px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: -0.55px; fill: #111827; }
+      .cardText { font: 450 15px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: -0.1px; fill: #5F6673; }
+      .smallText { font: 500 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: -0.05px; fill: #64748B; }
+      .darkTitle { font: 700 21px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: -0.35px; fill: #F8FAFC; }
+      .darkText { font: 450 14px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #CBD5E1; }
+      .number { font: 700 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: 1.4px; fill: #2563EB; }
+      .chip { fill: #FFFFFF; stroke: #E5E7EB; stroke-width: 1; }
+      .chipText { font: 560 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #334155; }
+      .wire { stroke: #94A3B8; stroke-width: 1.5; fill: none; marker-end: url(#arrow); }
+      .governanceWire { stroke: #94A3B8; stroke-width: 1.2; stroke-dasharray: 5 7; fill: none; }
+      .memoryWire { stroke: #CBD5E1; stroke-width: 1.2; fill: none; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="1040" fill="url(#bg)"/>
+  <circle cx="1320" cy="120" r="260" fill="#E0F2FE" opacity="0.55"/>
+  <circle cx="210" cy="850" r="320" fill="#EEF2FF" opacity="0.62"/>
+
+  <text x="92" y="106" class="eyebrow">Production Architecture Poster</text>
+  <text x="92" y="170" class="title">Alpha Forge</text>
+  <text x="96" y="214" class="subtitle">Agentic intelligence, research discipline, account fusion, and fail-closed execution.</text>
+
+  <rect x="1132" y="76" width="342" height="122" rx="28" fill="#FFFFFF" stroke="#E5E7EB" filter="url(#softShadow)"/>
+  <text x="1164" y="118" class="eyebrow">Operator Surface</text>
+  <text x="1164" y="151" class="cardTitle" style="font-size:20px">CLI + FastAPI Console</text>
+  <text x="1164" y="177" class="smallText">Human review, readiness, and controlled visibility</text>
+
+  <rect x="356" y="250" width="888" height="76" rx="26" fill="url(#ink)" filter="url(#cardShadow)"/>
+  <text x="392" y="284" class="darkTitle">Governance + Observability Fabric</text>
+  <text x="392" y="309" class="darkText">manifests / startup assertions / evals / human review / promotion gates / event journals</text>
+  <path d="M800 326 C800 360 800 378 800 410" class="governanceWire"/>
+
+  <g filter="url(#cardShadow)">
+    <rect x="82" y="410" width="248" height="310" rx="34" fill="#FFFFFF" stroke="#E5E7EB"/>
+    <text x="118" y="456" class="number">01 / SIGNAL</text>
+    <text x="118" y="492" class="cardTitle">Substrate</text>
+    <text x="118" y="526" class="cardText">
+      <tspan x="118" dy="0">Market reality enters as</tspan>
+      <tspan x="118" dy="22">language, price, liquidity,</tspan>
+      <tspan x="118" dy="22">positioning, options,</tspan>
+      <tspan x="118" dy="22">ownership, and macro.</tspan>
+    </text>
+    <rect x="116" y="630" width="180" height="36" rx="18" class="chip"/>
+    <text x="138" y="653" class="chipText">Language Stream</text>
+    <rect x="116" y="680" width="180" height="36" rx="18" class="chip"/>
+    <text x="138" y="703" class="chipText">Market Structure</text>
+  </g>
+
+  <g filter="url(#cardShadow)">
+    <rect x="386" y="410" width="248" height="310" rx="34" fill="url(#softBlue)" stroke="#DBEAFE"/>
+    <text x="422" y="456" class="number">02 / AGENTIC</text>
+    <text x="422" y="492" class="cardTitle">Intelligence</text>
+    <text x="422" y="526" class="cardText">
+      <tspan x="422" dy="0">Specialized agents reason</tspan>
+      <tspan x="422" dy="22">over market context,</tspan>
+      <tspan x="422" dy="22">challenge hypotheses, and</tspan>
+      <tspan x="422" dy="22">create governed features.</tspan>
+    </text>
+    <rect x="420" y="630" width="180" height="36" rx="18" class="chip"/>
+    <text x="442" y="653" class="chipText">AI Agent Swarm</text>
+    <rect x="420" y="680" width="180" height="36" rx="18" class="chip"/>
+    <text x="442" y="703" class="chipText">Text-Event-v2</text>
+  </g>
+
+  <g filter="url(#cardShadow)">
+    <rect x="690" y="410" width="248" height="310" rx="34" fill="#FFFFFF" stroke="#E5E7EB"/>
+    <text x="726" y="456" class="number">03 / RESEARCH</text>
+    <text x="726" y="492" class="cardTitle">Factory</text>
+    <text x="726" y="526" class="cardText">
+      <tspan x="726" dy="0">Campaigns, walk-forward</tspan>
+      <tspan x="726" dy="22">folds, IC diagnostics,</tspan>
+      <tspan x="726" dy="22">bootstrap evidence, and</tspan>
+      <tspan x="726" dy="22">regime tests become proof.</tspan>
+    </text>
+    <rect x="724" y="630" width="180" height="36" rx="18" class="chip"/>
+    <text x="746" y="653" class="chipText">Hybrid ML Graph</text>
+    <rect x="724" y="680" width="180" height="36" rx="18" class="chip"/>
+    <text x="746" y="703" class="chipText">Evidence Package</text>
+  </g>
+
+  <g filter="url(#cardShadow)">
+    <rect x="994" y="410" width="248" height="310" rx="34" fill="url(#softGreen)" stroke="#D9F99D"/>
+    <text x="1030" y="456" class="number">04 / ACCOUNT</text>
+    <text x="1030" y="492" class="cardTitle">Fusion</text>
+    <text x="1030" y="526" class="cardText">
+      <tspan x="1030" dy="0">Many engines submit</tspan>
+      <tspan x="1030" dy="22">proposals into one</tspan>
+      <tspan x="1030" dy="22">orchestrator for cash,</tspan>
+      <tspan x="1030" dy="22">risk, stale state, and</tspan>
+      <tspan x="1030" dy="22">exposure budgets.</tspan>
+    </text>
+    <rect x="1028" y="630" width="180" height="36" rx="18" class="chip"/>
+    <text x="1050" y="653" class="chipText">V2 Orchestrator</text>
+    <rect x="1028" y="680" width="180" height="36" rx="18" class="chip"/>
+    <text x="1050" y="703" class="chipText">Shadow to Live</text>
+  </g>
+
+  <g filter="url(#cardShadow)">
+    <rect x="1298" y="410" width="248" height="310" rx="34" fill="#FFF7ED" stroke="#FED7AA"/>
+    <text x="1334" y="456" class="number">05 / EXECUTE</text>
+    <text x="1334" y="492" class="cardTitle">Fortress</text>
+    <text x="1334" y="526" class="cardText">
+      <tspan x="1334" dy="0">Orders pass through</tspan>
+      <tspan x="1334" dy="22">fail-closed validation,</tspan>
+      <tspan x="1334" dy="22">reconciliation,</tspan>
+      <tspan x="1334" dy="22">throttles, and broker</tspan>
+      <tspan x="1334" dy="22">checks.</tspan>
+    </text>
+    <rect x="1332" y="630" width="180" height="36" rx="18" class="chip"/>
+    <text x="1354" y="653" class="chipText">Safe Orders</text>
+    <rect x="1332" y="680" width="180" height="36" rx="18" class="chip"/>
+    <text x="1354" y="703" class="chipText">IBKR / TWS</text>
+  </g>
+
+  <path d="M330 565 C350 565 360 565 386 565" class="wire"/>
+  <path d="M634 565 C654 565 664 565 690 565" class="wire"/>
+  <path d="M938 565 C958 565 968 565 994 565" class="wire"/>
+  <path d="M1242 565 C1262 565 1272 565 1298 565" class="wire"/>
+
+  <path d="M510 326 C510 356 510 376 510 410" class="governanceWire"/>
+  <path d="M814 326 C814 356 814 376 814 410" class="governanceWire"/>
+  <path d="M1118 326 C1118 356 1118 376 1118 410" class="governanceWire"/>
+  <path d="M1408 326 C1408 356 1408 376 1408 410" class="governanceWire"/>
+
+  <rect x="126" y="800" width="1348" height="174" rx="38" fill="#FFFFFF" stroke="#E5E7EB" filter="url(#cardShadow)"/>
+  <text x="174" y="846" class="eyebrow">Durable Memory + Audit Plane</text>
+  <text x="174" y="880" class="cardText">
+    <tspan x="174" dy="0">PostgreSQL, Redis Streams, Parquet artifacts, and event journals preserve model provenance,</tspan>
+    <tspan x="174" dy="22">order state, feature evidence, and operator traceability.</tspan>
+  </text>
+
+  <rect x="174" y="928" width="230" height="42" rx="21" fill="#F8FAFC" stroke="#E5E7EB"/>
+  <text x="202" y="954" class="chipText">PostgreSQL State</text>
+  <rect x="438" y="928" width="230" height="42" rx="21" fill="#F8FAFC" stroke="#E5E7EB"/>
+  <text x="466" y="954" class="chipText">Redis Event Bus</text>
+  <rect x="702" y="928" width="230" height="42" rx="21" fill="#F8FAFC" stroke="#E5E7EB"/>
+  <text x="730" y="954" class="chipText">Parquet Artifacts</text>
+  <rect x="966" y="928" width="230" height="42" rx="21" fill="#F8FAFC" stroke="#E5E7EB"/>
+  <text x="994" y="954" class="chipText">Event Journal</text>
+  <rect x="1230" y="928" width="196" height="42" rx="21" fill="#F8FAFC" stroke="#E5E7EB"/>
+  <text x="1258" y="954" class="chipText">Readiness Reports</text>
+
+  <path d="M814 720 C814 760 814 778 814 800" class="memoryWire"/>
+  <path d="M1118 720 C1118 760 1118 778 1118 800" class="memoryWire"/>
+  <path d="M1408 720 C1408 760 1408 778 1408 800" class="memoryWire"/>
+</svg>

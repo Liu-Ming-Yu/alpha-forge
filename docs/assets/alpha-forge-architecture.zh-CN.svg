@@ -1,0 +1,183 @@
+<svg width="1600" height="1040" viewBox="0 0 1600 1040" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc" xml:lang="zh-CN">
+  <title id="title">Alpha Forge 架构图</title>
+  <desc id="desc">一张生产级架构海报，展示 Alpha Forge 如何从信号基底进入智能体研究、组合融合、执行、治理和持久化审计。</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1600" y2="1040" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FBFBFD"/>
+      <stop offset="0.58" stop-color="#F5F7FA"/>
+      <stop offset="1" stop-color="#EEF4FF"/>
+    </linearGradient>
+    <linearGradient id="ink" x1="360" y1="168" x2="1240" y2="246" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#111827"/>
+      <stop offset="1" stop-color="#020617"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0EA5E9"/>
+      <stop offset="1" stop-color="#6366F1"/>
+    </linearGradient>
+    <linearGradient id="softBlue" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F8FBFF"/>
+      <stop offset="1" stop-color="#EEF6FF"/>
+    </linearGradient>
+    <linearGradient id="softGreen" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FBFFF7"/>
+      <stop offset="1" stop-color="#F1FBE8"/>
+    </linearGradient>
+    <filter id="cardShadow" x="-20%" y="-20%" width="140%" height="150%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#0F172A" flood-opacity="0.10"/>
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0F172A" flood-opacity="0.06"/>
+    </filter>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="150%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#0F172A" flood-opacity="0.07"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748B"/>
+    </marker>
+    <style>
+      .title { font: 700 58px -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; letter-spacing: -1.2px; fill: #1D1D1F; }
+      .subtitle { font: 400 22px -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; fill: #5F6673; }
+      .eyebrow { font: 650 13px -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; letter-spacing: 1.4px; fill: #64748B; }
+      .cardTitle { font: 700 24px -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; letter-spacing: -0.25px; fill: #111827; }
+      .cardText { font: 450 15px -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; fill: #5F6673; }
+      .smallText { font: 500 13px -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; fill: #64748B; }
+      .darkTitle { font: 700 21px -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; fill: #F8FAFC; }
+      .darkText { font: 450 14px -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; fill: #CBD5E1; }
+      .number { font: 700 13px -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; letter-spacing: 1.2px; fill: #2563EB; }
+      .chip { fill: #FFFFFF; stroke: #E5E7EB; stroke-width: 1; }
+      .chipText { font: 560 13px -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; fill: #334155; }
+      .wire { stroke: #94A3B8; stroke-width: 1.5; fill: none; marker-end: url(#arrow); }
+      .governanceWire { stroke: #94A3B8; stroke-width: 1.2; stroke-dasharray: 5 7; fill: none; }
+      .memoryWire { stroke: #CBD5E1; stroke-width: 1.2; fill: none; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="1040" fill="url(#bg)"/>
+  <circle cx="1320" cy="120" r="260" fill="#E0F2FE" opacity="0.55"/>
+  <circle cx="210" cy="850" r="320" fill="#EEF2FF" opacity="0.62"/>
+
+  <text x="92" y="106" class="eyebrow">生产级架构海报</text>
+  <text x="92" y="170" class="title">Alpha Forge</text>
+  <text x="96" y="214" class="subtitle">智能体研究、证据纪律、账户融合与故障关闭执行。</text>
+
+  <rect x="1132" y="76" width="342" height="122" rx="28" fill="#FFFFFF" stroke="#E5E7EB" filter="url(#softShadow)"/>
+  <text x="1164" y="118" class="eyebrow">操作员界面</text>
+  <text x="1164" y="151" class="cardTitle" style="font-size:20px">CLI + FastAPI 控制台</text>
+  <text x="1164" y="177" class="smallText">人工审核、就绪检查与受控可见性</text>
+
+  <rect x="356" y="250" width="888" height="76" rx="26" fill="url(#ink)" filter="url(#cardShadow)"/>
+  <text x="392" y="284" class="darkTitle">治理 + 可观测性织网</text>
+  <text x="392" y="309" class="darkText">清单 / 启动断言 / 评估 / 人审 / 晋升门 / 事件日志</text>
+  <path d="M800 326 C800 360 800 378 800 410" class="governanceWire"/>
+
+  <g filter="url(#cardShadow)">
+    <rect x="82" y="410" width="248" height="310" rx="34" fill="#FFFFFF" stroke="#E5E7EB"/>
+    <text x="118" y="456" class="number">01 / 信号</text>
+    <text x="118" y="492" class="cardTitle">信号基底</text>
+    <text x="118" y="526" class="cardText">
+      <tspan x="118" dy="0">市场现实以语言、</tspan>
+      <tspan x="118" dy="22">价格、流动性、持仓、</tspan>
+      <tspan x="118" dy="22">期权、所有权与宏观</tspan>
+      <tspan x="118" dy="22">进入系统。</tspan>
+    </text>
+    <rect x="116" y="630" width="180" height="36" rx="18" class="chip"/>
+    <text x="138" y="653" class="chipText">语言流</text>
+    <rect x="116" y="680" width="180" height="36" rx="18" class="chip"/>
+    <text x="138" y="703" class="chipText">市场结构</text>
+  </g>
+
+  <g filter="url(#cardShadow)">
+    <rect x="386" y="410" width="248" height="310" rx="34" fill="url(#softBlue)" stroke="#DBEAFE"/>
+    <text x="422" y="456" class="number">02 / 智能体</text>
+    <text x="422" y="492" class="cardTitle">智能层</text>
+    <text x="422" y="526" class="cardText">
+      <tspan x="422" dy="0">专门化智能体理解</tspan>
+      <tspan x="422" dy="22">市场上下文，挑战</tspan>
+      <tspan x="422" dy="22">假设，并生成受治理</tspan>
+      <tspan x="422" dy="22">的特征。</tspan>
+    </text>
+    <rect x="420" y="630" width="180" height="36" rx="18" class="chip"/>
+    <text x="442" y="653" class="chipText">AI 智能体群</text>
+    <rect x="420" y="680" width="180" height="36" rx="18" class="chip"/>
+    <text x="442" y="703" class="chipText">Text-Event-v2</text>
+  </g>
+
+  <g filter="url(#cardShadow)">
+    <rect x="690" y="410" width="248" height="310" rx="34" fill="#FFFFFF" stroke="#E5E7EB"/>
+    <text x="726" y="456" class="number">03 / 研究</text>
+    <text x="726" y="492" class="cardTitle">研究工厂</text>
+    <text x="726" y="526" class="cardText">
+      <tspan x="726" dy="0">研究活动、滚动样本外、</tspan>
+      <tspan x="726" dy="22">IC 诊断、自助法证据与</tspan>
+      <tspan x="726" dy="22">市场状态测试共同形成</tspan>
+      <tspan x="726" dy="22">可复现证据。</tspan>
+    </text>
+    <rect x="724" y="630" width="180" height="36" rx="18" class="chip"/>
+    <text x="746" y="653" class="chipText">混合 ML 图谱</text>
+    <rect x="724" y="680" width="180" height="36" rx="18" class="chip"/>
+    <text x="746" y="703" class="chipText">证据包</text>
+  </g>
+
+  <g filter="url(#cardShadow)">
+    <rect x="994" y="410" width="248" height="310" rx="34" fill="url(#softGreen)" stroke="#D9F99D"/>
+    <text x="1030" y="456" class="number">04 / 账户</text>
+    <text x="1030" y="492" class="cardTitle">组合融合</text>
+    <text x="1030" y="526" class="cardText">
+      <tspan x="1030" dy="0">多个引擎提交提案，</tspan>
+      <tspan x="1030" dy="22">一个编排器统一现金、</tspan>
+      <tspan x="1030" dy="22">风险、陈旧状态与</tspan>
+      <tspan x="1030" dy="22">敞口预算。</tspan>
+    </text>
+    <rect x="1028" y="630" width="180" height="36" rx="18" class="chip"/>
+    <text x="1050" y="653" class="chipText">V2 编排器</text>
+    <rect x="1028" y="680" width="180" height="36" rx="18" class="chip"/>
+    <text x="1050" y="703" class="chipText">Shadow 到 Live</text>
+  </g>
+
+  <g filter="url(#cardShadow)">
+    <rect x="1298" y="410" width="248" height="310" rx="34" fill="#FFF7ED" stroke="#FED7AA"/>
+    <text x="1334" y="456" class="number">05 / 执行</text>
+    <text x="1334" y="492" class="cardTitle">执行堡垒</text>
+    <text x="1334" y="526" class="cardText">
+      <tspan x="1334" dy="0">订单经过故障关闭</tspan>
+      <tspan x="1334" dy="22">校验、状态对账、</tspan>
+      <tspan x="1334" dy="22">节流控制与券商检查</tspan>
+      <tspan x="1334" dy="22">后才可执行。</tspan>
+    </text>
+    <rect x="1332" y="630" width="180" height="36" rx="18" class="chip"/>
+    <text x="1354" y="653" class="chipText">安全订单</text>
+    <rect x="1332" y="680" width="180" height="36" rx="18" class="chip"/>
+    <text x="1354" y="703" class="chipText">IBKR / TWS</text>
+  </g>
+
+  <path d="M330 565 C350 565 360 565 386 565" class="wire"/>
+  <path d="M634 565 C654 565 664 565 690 565" class="wire"/>
+  <path d="M938 565 C958 565 968 565 994 565" class="wire"/>
+  <path d="M1242 565 C1262 565 1272 565 1298 565" class="wire"/>
+
+  <path d="M510 326 C510 356 510 376 510 410" class="governanceWire"/>
+  <path d="M814 326 C814 356 814 376 814 410" class="governanceWire"/>
+  <path d="M1118 326 C1118 356 1118 376 1118 410" class="governanceWire"/>
+  <path d="M1408 326 C1408 356 1408 376 1408 410" class="governanceWire"/>
+
+  <rect x="126" y="800" width="1348" height="174" rx="38" fill="#FFFFFF" stroke="#E5E7EB" filter="url(#cardShadow)"/>
+  <text x="174" y="846" class="eyebrow">持久化内存 + 审计平面</text>
+  <text x="174" y="880" class="cardText">
+    <tspan x="174" dy="0">PostgreSQL、Redis Streams、Parquet 产物与事件日志保存模型来源、</tspan>
+    <tspan x="174" dy="22">订单状态、特征证据和操作员可追溯性。</tspan>
+  </text>
+
+  <rect x="174" y="928" width="230" height="42" rx="21" fill="#F8FAFC" stroke="#E5E7EB"/>
+  <text x="202" y="954" class="chipText">PostgreSQL 状态</text>
+  <rect x="438" y="928" width="230" height="42" rx="21" fill="#F8FAFC" stroke="#E5E7EB"/>
+  <text x="466" y="954" class="chipText">Redis 事件总线</text>
+  <rect x="702" y="928" width="230" height="42" rx="21" fill="#F8FAFC" stroke="#E5E7EB"/>
+  <text x="730" y="954" class="chipText">Parquet 产物</text>
+  <rect x="966" y="928" width="230" height="42" rx="21" fill="#F8FAFC" stroke="#E5E7EB"/>
+  <text x="994" y="954" class="chipText">事件日志</text>
+  <rect x="1230" y="928" width="196" height="42" rx="21" fill="#F8FAFC" stroke="#E5E7EB"/>
+  <text x="1258" y="954" class="chipText">就绪报告</text>
+
+  <path d="M814 720 C814 760 814 778 814 800" class="memoryWire"/>
+  <path d="M1118 720 C1118 760 1118 778 1118 800" class="memoryWire"/>
+  <path d="M1408 720 C1408 760 1408 778 1408 800" class="memoryWire"/>
+</svg>
