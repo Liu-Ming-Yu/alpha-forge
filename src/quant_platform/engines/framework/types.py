@@ -53,6 +53,11 @@ class EngineConfig:
     instrument_contracts: dict[uuid.UUID, dict[str, object]] = field(default_factory=dict)
     plugin_name: str = ""
     feature_set_name: str = "classical"
+    #: Feature-set version whose family the engine schedules + computes each cycle.
+    #: Empty ⇒ the engine default (``feature_pipeline.FEATURE_SET_VERSION`` — the
+    #: ``close`` family), preserving every existing plugin. A plugin sets this to
+    #: select a different family (e.g. ``pv-formulaic-live-v1`` for Arm G).
+    feature_set_version: str = ""
     required_features: tuple[str, ...] = ()
     signal_model_factory: (
         Callable[

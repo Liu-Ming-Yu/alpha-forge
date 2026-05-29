@@ -5,13 +5,13 @@ from __future__ import annotations
 import uuid
 from typing import TYPE_CHECKING, Literal, cast
 
+from quant_platform.services.research_service.campaigns.evaluation.streak_containment import (
+    max_drawdown_during_worst_streak,
+)
 from quant_platform.services.research_service.campaigns.metrics.ranker_metrics import (
     attribution_by_metadata,
     bootstrap_ic_ci,
     daily_metrics,
-    equal_weights,
-    fit_correlation_weights,
-    score_features,
     top_minus_bottom_decile_ic,
 )
 from quant_platform.services.research_service.campaigns.metrics.ranker_metrics import (
@@ -22,6 +22,7 @@ from quant_platform.services.research_service.campaigns.metrics.return_metrics i
     max_drawdown,
     sharpe,
 )
+from quant_platform.services.research_service.campaigns.models.linear import LinearICRanker
 from quant_platform.services.research_service.campaigns.portfolio.construction import (
     CampaignPortfolioConfig,
     evaluate_long_only_portfolio,
@@ -56,6 +57,14 @@ from quant_platform.services.research_service.sampling.factory_models import (
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from quant_platform.services.research_service.campaigns.models.base import AlphaModel
+    from quant_platform.services.research_service.campaigns.portfolio.costs import TradingCostModel
+    from quant_platform.services.research_service.campaigns.portfolio.selection import (
+        SelectionStrategy,
+    )
+    from quant_platform.services.research_service.campaigns.portfolio.weighting import (
+        WeightingScheme,
+    )
     from quant_platform.services.research_service.sampling.samples import SupervisedAlphaSample
 
 
@@ -80,8 +89,22 @@ def run_sample_walk_forward(
     return_scale: float = 1.0,
     portfolio_config: CampaignPortfolioConfig | None = None,
     fold_streak_risk_config: FoldStreakRiskConfig | None = None,
+    model: AlphaModel | None = None,
+    cost_model: TradingCostModel | None = None,
+    weighting: WeightingScheme | None = None,
+    selection: SelectionStrategy | None = None,
 ) -> WalkForwardEvidence:
-    """Evaluate a simple learned linear ranker over purged walk-forward folds.
+    """Evaluate a pluggable alpha model over purged walk-forward folds.
+
+    ``model`` is refit on each fold's (purged) training window and scores the
+    test rows. When ``model`` is ``None`` the driver builds the
+    behavior-preserving default — a :class:`LinearICRanker` configured from
+    ``weight_mode`` (``non_negative=True``) — so existing callers are unchanged
+    and bit-identical. Pass an explicit ``model`` (e.g. a
+    ``GradientBoostedRanker``) to swap the learner; everything downstream (the
+    sample-level purge, eligibility gate, portfolio constructor, and fold-streak
+    dial) is model-agnostic and untouched. When ``model`` is supplied,
+    ``weight_mode`` is ignored.
 
     See ``docs/architecture/adr-003-return-accounting-separation.md`` for
     the realized-vs-legacy mode contract; this driver enforces all-or-
@@ -97,6 +120,23 @@ def run_sample_walk_forward(
     evaluation completes. Signed-rank arms (no ``portfolio_config``)
     ignore the streak config; they are diagnostic baselines, not
     portfolio candidates, and adding the dial there is noise.
+
+    ``cost_model`` (long-only arms only) prices each rebalance from its per-name
+    trade vector. ``None`` keeps the behavior-preserving linear model built from
+    ``slippage_bps_per_turnover`` (arms unchanged, bit-identical); a convex model
+    (:class:`QuadraticImpactCost`, Arm K) is a drop-in swap. It is rejected for
+    signed-rank arms, whose flat-slippage accounting has no per-name trade vector
+    to price.
+
+    ``weighting`` (long-only arms only) sizes the selected names. ``None`` keeps
+    equal weight (bit-identical); an inverse-vol scheme (:class:`InverseVolWeight`,
+    Arm L) is a drop-in swap. Rejected for signed-rank arms, which have no
+    long-only target book to size.
+
+    ``selection`` (long-only arms only) chooses which names to hold. ``None``
+    keeps the fresh top-N (bit-identical); a buffered strategy
+    (:class:`BufferedTopKSelection`, Arm M) holds slipping incumbents to cut
+    membership churn. Rejected for signed-rank arms.
     """
     if not samples:
         raise ValueError("walk-forward requires at least one sample")
@@ -133,6 +173,29 @@ def run_sample_walk_forward(
             "sample or none."
         )
     samples_have_indices = indexed_count == len(samples)
+    # A cost model prices a per-name trade vector, which only the long-only
+    # portfolio path produces. Reject it for signed-rank arms rather than
+    # silently ignoring it (which would hide a misconfigured experiment).
+    if cost_model is not None and portfolio_config is None:
+        raise ValueError(
+            "cost_model requires a portfolio_config: it prices the long-only "
+            "rebalance trade vector, which the signed-rank path does not build."
+        )
+    # Same reasoning for the weighting scheme: it sizes a long-only target book.
+    if weighting is not None and portfolio_config is None:
+        raise ValueError(
+            "weighting requires a portfolio_config: it sizes the long-only "
+            "target book, which the signed-rank path does not build."
+        )
+    # ...and for the selection strategy: it chooses the long-only held set.
+    if selection is not None and portfolio_config is None:
+        raise ValueError(
+            "selection requires a portfolio_config: it chooses the long-only "
+            "held set, which the signed-rank path does not build."
+        )
+    # Default to the behavior-preserving linear ranker when no model is given.
+    # ``weight_mode`` only configures this default; an explicit ``model`` wins.
+    active_model = model if model is not None else LinearICRanker(weight_mode=weight_mode)
     thresholds = thresholds or AlphaEligibilityThresholds()
     ordered = sorted(samples, key=lambda row: (row.as_of, str(row.instrument_id)))
     start = ordered[0].as_of
@@ -185,18 +248,19 @@ def run_sample_walk_forward(
             fold_basis = "calendar_days_plus_sample_label_index_purge"
         else:
             fold_basis = "calendar_days"
-        if weight_mode == "equal_weight":
-            weights = equal_weights(train, feature_names)
-        else:
-            # Non-negative fit: classical alpha factors are positive-oriented,
-            # so a negative weight is always regime-overfit (it would short a
-            # factor with a real positive premium). Drop, do not short.
-            weights = fit_correlation_weights(train, feature_names, non_negative=True)
+        # Refit the model on this fold's purged training window. The fitted
+        # object is immutable and fold-local, so no state leaks across folds.
+        # ``feature_weights`` is the model's per-feature contribution (linear
+        # coefficients, or normalized tree importances) — used only for the
+        # evidence ``selected_weights`` field and cross-fold feature_stability,
+        # never for scoring (the model's own ``score`` drives the ranking).
+        fitted = active_model.fit(train, feature_names)
+        weights = dict(fitted.feature_weights())
         if feature_names is not None and not weights:
             raise ValueError("walk-forward selected no matching features")
         selected_weights = weights
         fold_weights.append(dict(weights))
-        scored = [(row, score_features(row.features, weights)) for row in test]
+        scored = list(zip(test, fitted.score(test), strict=True))
         all_scored.extend(scored)
         volatility_payload: dict[str, float] | None = None
         streak_scale_payload: dict[str, object] | None = None
@@ -207,7 +271,7 @@ def run_sample_walk_forward(
                 prev_scores=prev_scores,
             )
         else:
-            train_scored = [(row, score_features(row.features, weights)) for row in train]
+            train_scored = list(zip(train, fitted.score(train), strict=True))
             volatility_scale = fit_fold_volatility_scale(
                 train_scored,
                 config=portfolio_config,
@@ -234,6 +298,9 @@ def run_sample_walk_forward(
                 config=portfolio_config,
                 previous_weights=prev_portfolio_weights,
                 exposure_scale=effective_exposure_scale,
+                cost_model=cost_model,
+                weighting=weighting,
+                selection=selection,
             )
             daily_returns = list(portfolio_eval.daily_returns)
             daily_ics = list(portfolio_eval.daily_ics)
@@ -328,6 +395,19 @@ def run_sample_walk_forward(
             fold_streak_risk_config,
             per_fold_streak_scales,
         )
+        # Pin the cost model into the evidence only when a non-default one was
+        # supplied (Arm K) — same precedent as the regime_detector block. The
+        # default arms are already fully described by ``slippage_bps_per_turnover``
+        # (a linear model), so their evidence stays byte-for-byte unchanged.
+        if cost_model is not None:
+            portfolio_payload["cost_model"] = dict(cost_model.metadata())
+        # Same precedent for the weighting scheme — pin it only when non-default
+        # (Arm L), so equal-weight arms' evidence stays byte-for-byte unchanged.
+        if weighting is not None:
+            portfolio_payload["weighting"] = dict(weighting.metadata())
+        # ...and the selection strategy (Arm M), same conditional precedent.
+        if selection is not None:
+            portfolio_payload["selection"] = dict(selection.metadata())
         aggregate_obj = portfolio_payload.get("aggregate", {})
         aggregate = aggregate_obj if isinstance(aggregate_obj, dict) else {}
         streak_payload = portfolio_payload.get("fold_streak_risk", {})
@@ -407,11 +487,19 @@ def _ic_streak_metrics(
     # ``_mean(...)``, but the isinstance guard also keeps malformed test
     # fixtures from blowing up the helper.
     fold_ics: list[float] = []
+    fold_returns: list[float] = []
     for row in fold_rows:
-        raw = row.get("mean_ic", 0.0)
-        fold_ics.append(float(raw) if isinstance(raw, (int, float)) else 0.0)
+        raw_ic = row.get("mean_ic", 0.0)
+        fold_ics.append(float(raw_ic) if isinstance(raw_ic, (int, float)) else 0.0)
+        raw_ret = row.get("total_return", 0.0)
+        fold_returns.append(float(raw_ret) if isinstance(raw_ret, (int, float)) else 0.0)
     daily_ics = [ic for _, ic in all_daily_ics]
     return {
         "fold_negative_ic_streak": float(_negative_streak(fold_ics)),
         "daily_negative_ic_streak": float(_negative_streak(daily_ics)),
+        # Gate input for the drawdown-conditioned streak check (ADR-004 Option
+        # D): the drawdown the book actually took during the worst streak.
+        "max_drawdown_during_worst_streak": max_drawdown_during_worst_streak(
+            fold_ics, fold_returns
+        ),
     }

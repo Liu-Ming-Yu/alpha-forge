@@ -14,7 +14,9 @@ Public entry point: :func:`mine_alphas`. Public building blocks
 re-exported here so callers can compose custom pipelines:
 
 * :class:`AlphaGrammar` — what the search is allowed to sample from.
-* :class:`RandomSearch`, :class:`EvolutionarySearch` — search loops.
+* :class:`RandomSearch`, :class:`EvolutionarySearch`,
+  :class:`PolicySearch` — search loops (uniform sampling, genetic
+  programming, and qlib-style policy-guided mutation).
 * :class:`AdmissionGate` + :class:`AdmissionThresholds` — promotion
   gate with correlation pruning.
 * :class:`CandidateEvidence` — per-candidate metrics record.
@@ -37,17 +39,24 @@ Two evaluation modes
   ``max_fold_negative_ic_streak`` and ``min_n_folds_valid``
   thresholds without any other change at the call site.
 
-Out of scope for this PR
------------------------
+Search algorithms
+-----------------
 
-* **RL-style search.** The Protocol shape is here so a future
-  ``PolicySearch`` can drop in alongside random / evolutionary.
-* **CLI operator workflow.** ``mine_alphas`` is a library function;
-  a ``quant-platform mine-alphas`` CLI is a follow-up.
-* **Auto-promotion of admitted alphas to the formulaic family's
-  MANIFEST.** Admitted candidates today are returned for human
-  review; auto-promotion lands once mining proves itself on real
-  data.
+Three :class:`SearchAlgorithm` implementations ship today, all behind
+the same ``iterate(grammar, rng, fitness_fn)`` Protocol:
+
+* :class:`RandomSearch` — uniform AST sampling (baseline / seed pool).
+* :class:`EvolutionarySearch` — tournament-selection genetic programming.
+* :class:`PolicySearch` — qlib-style policy-guided mutation; the policy
+  reads search observations and chooses the next mutation. The fitness
+  it conditions on is the *same* IC the gate uses (a cache lookup, not a
+  second evaluation), so policy-guided search shares the provenance and
+  admission path of the other two.
+
+Operator workflow: ``scripts/mine_alphas.py`` exposes all three search
+algorithms; ``scripts/promote_alphas.py`` plus
+:mod:`...formulaic.auto_library` handle auto-promotion of admitted
+candidates into the formulaic family's effective library.
 """
 
 from __future__ import annotations
@@ -85,6 +94,9 @@ from quant_platform.research.features.formulaic.mining.grammar import (
 from quant_platform.research.features.formulaic.mining.mutation import (
     MUTATION_KINDS,
     mutate,
+)
+from quant_platform.research.features.formulaic.mining.policy_search import (
+    PolicySearch,
 )
 from quant_platform.research.features.formulaic.mining.provenance import (
     AutoAlphaProvenance,
@@ -170,9 +182,9 @@ def mine_alphas(
         Forward-return label Series, index-aligned to ``panel.frame``.
         :func:`make_forward_return_labels` is the supplied helper.
     search:
-        :class:`SearchAlgorithm` instance — :class:`RandomSearch` or
-        :class:`EvolutionarySearch` today; future
-        ``PolicySearch`` etc. drops in via the Protocol.
+        :class:`SearchAlgorithm` instance — :class:`RandomSearch`,
+        :class:`EvolutionarySearch`, or :class:`PolicySearch`. Custom
+        searchers drop in via the Protocol.
     gate:
         :class:`AdmissionGate` deciding which evaluations get admitted.
     seed:
@@ -342,6 +354,7 @@ __all__ = [
     "EvolutionarySearch",
     "MiningFoldConfig",
     "MiningResult",
+    "PolicySearch",
     "RandomSearch",
     "SearchAlgorithm",
     "WalkForwardEvidence",

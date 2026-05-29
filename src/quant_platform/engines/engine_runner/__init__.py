@@ -184,7 +184,7 @@ class EngineRunner(EngineRunnerShadowMixin, EngineRunnerProposalMixin, EngineRun
             self._model_registry,
             engine_name=self._config.engine_name,
             engine_version=self._config.engine_version,
-            feature_set_version=FEATURE_SET_VERSION,
+            feature_set_version=self._config.feature_set_version or FEATURE_SET_VERSION,
             run_mode=self._config.run_mode,
             max_positions=self._config.max_positions,
             interval_seconds=self._config.rebalance_interval_seconds,

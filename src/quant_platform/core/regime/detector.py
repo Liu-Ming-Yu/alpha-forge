@@ -38,11 +38,20 @@ class MarketRegimeDetector:
         thresholds: RegimeThresholds | None = None,
         *,
         disagree_haircut: float = 0.75,
+        log_updates: bool = True,
     ) -> None:
         self._thresholds = thresholds or DEFAULT_REGIME_THRESHOLDS
         if not 0.0 <= disagree_haircut <= 1.0:
             raise ValueError("disagree_haircut must be in [0, 1]")
         self._disagree_haircut = float(disagree_haircut)
+        # ``update()`` emits a per-step ``regime_detector.updated`` debug
+        # line. In live/paper trading that's once per cycle — useful
+        # signal. In the research feature factory the detector is stepped
+        # once per date across the whole universe-300 history (~hundreds
+        # of thousands of calls), so the offline caller passes
+        # ``log_updates=False`` to suppress it while live keeps the
+        # default. State-machine behaviour is unaffected either way.
+        self._log_updates = bool(log_updates)
         self._current_stats: MarketStats | None = None
         self._version = self._version_for(self._thresholds)
         self._stable_regime: RegimeLabel = RegimeLabel.TRANSITION
@@ -59,12 +68,13 @@ class MarketRegimeDetector:
     def update(self, stats: MarketStats) -> None:
         """Update internal state with fresh market statistics."""
         self._current_stats = stats
-        log.debug(
-            "regime_detector.updated",
-            trend_z=stats.trend_z,
-            realized_vol=stats.realized_vol,
-            breadth=stats.breadth,
-        )
+        if self._log_updates:
+            log.debug(
+                "regime_detector.updated",
+                trend_z=stats.trend_z,
+                realized_vol=stats.realized_vol,
+                breadth=stats.breadth,
+            )
 
     def classify(self, stats: MarketStats) -> RegimeState:
         """Classify regime from explicit stats without changing detector state."""

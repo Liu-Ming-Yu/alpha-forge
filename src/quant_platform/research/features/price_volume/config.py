@@ -1,41 +1,42 @@
-"""Configuration for the ``price-volume-starter-v1`` feature set."""
+"""Compatibility shim — price-volume config moved to the inner-layer kernel (ADR-011).
+
+Canonical definitions now live in
+``quant_platform.services.research_service.features.kernel.price_volume.config``.
+The family registration in this package's ``__init__`` re-exports through here.
+"""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import TYPE_CHECKING
-
-from quant_platform.research.features.contracts import BaseFamilyConfig
-
-if TYPE_CHECKING:
-    from quant_platform.research.features.transforms import MinPeriodsPolicy
-
-FEATURE_SET_VERSION: str = "price-volume-starter-v1"
-
-LOOKBACKS_RETURN: tuple[int, ...] = (1, 5, 10, 21, 63, 126, 252)
-LOOKBACKS_VOL: tuple[int, ...] = (21, 63, 126)
-LOOKBACK_AMIHUD: int = 20
-LOOKBACK_DOLLAR_VOLUME: int = 20
-LOOKBACK_VOLUME_ZSCORE: int = 20
-LOOKBACK_HIGH_LOW_RANGE: int = 20
-LOOKBACK_52W_HIGH: int = 252
-
-
-@dataclass(frozen=True)
-class PriceVolumeConfig(BaseFamilyConfig):
-    """Frozen config for the price-volume starter feature factory."""
-
-    min_periods_policy: MinPeriodsPolicy = "full"
-    version: str = FEATURE_SET_VERSION
-
-    def __post_init__(self) -> None:
-        super().__post_init__()
-        if self.min_periods_policy not in ("full", "partial"):
-            raise ValueError(f"unknown min_periods_policy: {self.min_periods_policy!r}")
-
-
-DEFAULT_CONFIG: PriceVolumeConfig = PriceVolumeConfig()
-
+from quant_platform.services.research_service.features.kernel.price_volume.config import (
+    DEFAULT_CONFIG as DEFAULT_CONFIG,
+)
+from quant_platform.services.research_service.features.kernel.price_volume.config import (
+    FEATURE_SET_VERSION as FEATURE_SET_VERSION,
+)
+from quant_platform.services.research_service.features.kernel.price_volume.config import (
+    LOOKBACK_52W_HIGH as LOOKBACK_52W_HIGH,
+)
+from quant_platform.services.research_service.features.kernel.price_volume.config import (
+    LOOKBACK_AMIHUD as LOOKBACK_AMIHUD,
+)
+from quant_platform.services.research_service.features.kernel.price_volume.config import (
+    LOOKBACK_DOLLAR_VOLUME as LOOKBACK_DOLLAR_VOLUME,
+)
+from quant_platform.services.research_service.features.kernel.price_volume.config import (
+    LOOKBACK_HIGH_LOW_RANGE as LOOKBACK_HIGH_LOW_RANGE,
+)
+from quant_platform.services.research_service.features.kernel.price_volume.config import (
+    LOOKBACK_VOLUME_ZSCORE as LOOKBACK_VOLUME_ZSCORE,
+)
+from quant_platform.services.research_service.features.kernel.price_volume.config import (
+    LOOKBACKS_RETURN as LOOKBACKS_RETURN,
+)
+from quant_platform.services.research_service.features.kernel.price_volume.config import (
+    LOOKBACKS_VOL as LOOKBACKS_VOL,
+)
+from quant_platform.services.research_service.features.kernel.price_volume.config import (
+    PriceVolumeConfig as PriceVolumeConfig,
+)
 
 __all__ = [
     "DEFAULT_CONFIG",

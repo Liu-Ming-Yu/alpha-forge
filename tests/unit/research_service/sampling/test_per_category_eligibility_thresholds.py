@@ -70,10 +70,20 @@ class TestThresholdValueRelationships:
     def test_portfolio_candidate_streak_is_looser_than_baseline(self) -> None:
         # Looser streak: long-only construction absorbs negative-IC
         # stretches that would be catastrophic for an unconstrained
-        # signed-rank book.
+        # signed-rank book. Post-ADR-004-addendum the floor matches the
+        # baseline (2); the laxity now lives in the drawdown-conditioned
+        # relaxed cap, which must exceed the baseline floor.
         assert (
             PORTFOLIO_CANDIDATE_THRESHOLDS.max_fold_negative_ic_streak
-            > RESEARCH_RANKER_BASELINE_THRESHOLDS.max_fold_negative_ic_streak
+            == RESEARCH_RANKER_BASELINE_THRESHOLDS.max_fold_negative_ic_streak
+        )
+        relaxed_cap = PORTFOLIO_CANDIDATE_THRESHOLDS.max_fold_negative_ic_streak_if_dd_contained
+        assert relaxed_cap is not None
+        assert relaxed_cap > RESEARCH_RANKER_BASELINE_THRESHOLDS.max_fold_negative_ic_streak
+        # The baseline must NOT carry a relaxation — it has no construction to
+        # earn it.
+        assert (
+            RESEARCH_RANKER_BASELINE_THRESHOLDS.max_fold_negative_ic_streak_if_dd_contained is None
         )
 
     def test_portfolio_candidate_drawdown_is_tighter_than_baseline(self) -> None:
@@ -183,12 +193,16 @@ class TestPerCategoryGateSeparation:
     """
 
     def _g_metrics(self) -> dict[str, float]:
-        # Verbatim from v4 universe-300 run, Arm G evidence.
+        # Verbatim from the realized_v2 universe-300 run, Arm G evidence.
+        # The summer-2024 streak-4 episode was absorbed by the construction:
+        # cumulative return over the four folds was ~flat, so the within-streak
+        # drawdown is negligible (well inside the −10% bound).
         return {
             "oos_rolling_ic": 0.2561,
             "ic_60d": 0.0912,
             "fold_negative_ic_streak": 4.0,
             "max_drawdown": -0.0421,
+            "max_drawdown_during_worst_streak": -0.004,
             "slippage_adjusted_sharpe": 1.0886,
         }
 
@@ -246,6 +260,7 @@ class TestPerCategoryGateSeparation:
             "ic_60d": 0.05,
             "fold_negative_ic_streak": 4.0,
             "max_drawdown": -0.05,
+            "max_drawdown_during_worst_streak": -0.02,  # contained within −0.10
             "slippage_adjusted_sharpe": 1.5,
         }
         baseline_result = eligibility(metrics_with_streak_4, RESEARCH_RANKER_BASELINE_THRESHOLDS)
@@ -253,3 +268,72 @@ class TestPerCategoryGateSeparation:
         # Same metrics, candidate gate → pass.
         candidate_result = eligibility(metrics_with_streak_4, PORTFOLIO_CANDIDATE_THRESHOLDS)
         assert candidate_result["passed"] is True
+
+
+# -- 4. The drawdown-conditioned streak relaxation (ADR-004 Option D) -------
+
+
+class TestDrawdownConditionedStreakGate:
+    """The streak relaxation is earned per-episode by realized drawdown.
+
+    A streak above the strict floor (2) is tolerated up to the hard cap (6)
+    *only if* the drawdown during that streak stayed inside the tight
+    containment bound (−5%). Otherwise the floor applies and the relaxation is
+    forfeit — even when the full-run drawdown gate still passes.
+    """
+
+    def _candidate_metrics(
+        self,
+        *,
+        streak: float,
+        dd_in_streak: float,
+        full_dd: float = -0.04,
+    ) -> dict[str, float]:
+        return {
+            "oos_rolling_ic": 0.10,
+            "ic_60d": 0.05,
+            "fold_negative_ic_streak": streak,
+            "max_drawdown": full_dd,
+            "max_drawdown_during_worst_streak": dd_in_streak,
+            "slippage_adjusted_sharpe": 1.5,
+        }
+
+    def _streak_check(self, result: dict[str, object]) -> dict[str, object]:
+        checks = result["checks"]
+        assert isinstance(checks, list)
+        return next(c for c in checks if c["name"] == "fold_negative_ic_streak")
+
+    def test_streak_within_floor_passes_at_floor_threshold(self) -> None:
+        # streak 2 <= floor 2: passes via the floor; the within-streak DD is
+        # not even consulted (here it is deliberately catastrophic).
+        metrics = self._candidate_metrics(streak=2.0, dd_in_streak=-0.99)
+        check = self._streak_check(eligibility(metrics, PORTFOLIO_CANDIDATE_THRESHOLDS))
+        assert check["passed"] is True
+        assert check["threshold"] == 2
+
+    def test_streak_above_floor_passes_when_dd_contained(self) -> None:
+        metrics = self._candidate_metrics(streak=4.0, dd_in_streak=-0.01)
+        check = self._streak_check(eligibility(metrics, PORTFOLIO_CANDIDATE_THRESHOLDS))
+        assert check["passed"] is True
+        assert check["threshold"] == 6  # relaxed cap applied
+
+    def test_streak_above_floor_fails_when_episode_caused_the_drawdown(self) -> None:
+        # The discriminating case: the full-run DD gate PASSES (−9% > −10%), but
+        # the streak episode itself caused −8% (worse than the −5% containment
+        # bound), so the relaxation is forfeit and the strict floor applies.
+        metrics = self._candidate_metrics(streak=4.0, dd_in_streak=-0.08, full_dd=-0.09)
+        result = eligibility(metrics, PORTFOLIO_CANDIDATE_THRESHOLDS)
+        check = self._streak_check(result)
+        assert check["passed"] is False
+        assert check["threshold"] == 2  # reverted to floor
+        # The full-run drawdown gate still passes — only the streak gate caught it.
+        dd_check = next(c for c in result["checks"] if c["name"] == "max_drawdown")
+        assert dd_check["passed"] is True
+
+    def test_streak_above_hard_cap_fails_even_when_contained(self) -> None:
+        # The GBDT-rank shape: streak 9 with a fully-contained episode still
+        # exceeds the hard cap.
+        metrics = self._candidate_metrics(streak=9.0, dd_in_streak=0.0)
+        check = self._streak_check(eligibility(metrics, PORTFOLIO_CANDIDATE_THRESHOLDS))
+        assert check["passed"] is False
+        assert check["threshold"] == 6

@@ -1,8 +1,9 @@
 """Full walk-forward backtest of the latest feature / strategy / alpha stack.
 
-Seven arms, all on the same universe daily-bar window, identical
+Fourteen arms (A-N), all on the same universe daily-bar window, identical
 walk-forward grid, identical 21d log-return label, 10 bps slippage per
-turnover, evaluated by the existing ``run_sample_walk_forward`` driver:
+turnover (except Arm K, which prices a quadratic impact model), evaluated by
+the existing ``run_sample_walk_forward`` driver:
 
 * **A — research_ranker_pv**                                    : 27 price-volume
                                                                   features, signed-rank.
@@ -26,6 +27,45 @@ turnover, evaluated by the existing ``run_sample_walk_forward`` driver:
                                                                   learned-PCA (36 features
                                                                   instead of 45).
 * **G — long_only_top30_pv_formulaic_streakdial**               : Arm F + streak dial.
+* **H — long_only_top30_pv_formulaic_streakdial_regime**        : Arm G + regime ×
+                                                                  base-feature
+                                                                  interaction overlay
+                                                                  (regime-v1 family).
+* **I — long_only_top30_pv_formulaic_streakdial_gbdt**          : Arm G with the linear
+                                                                  IC-weighted ranker
+                                                                  swapped for an XGBoost
+                                                                  gradient-boosted ranker
+                                                                  (MSE objective, GPU auto).
+* **J — long_only_top30_pv_formulaic_streakdial_gbdt_rank**     : Arm I with a
+                                                                  learning-to-rank
+                                                                  objective (rank:pairwise
+                                                                  + per-date query groups).
+* **K — long_only_top30_pv_formulaic_streakdial_quadcost**      : Arm G priced
+                                                                  through a quadratic
+                                                                  market-impact cost model
+                                                                  (linear 10 bps + per-name
+                                                                  quadratic impact) instead
+                                                                  of the flat 10 bps —
+                                                                  cost-robustness arm.
+* **L — long_only_top30_pv_formulaic_streakdial_invvol**        : Arm G with
+                                                                  equal-weight sizing
+                                                                  replaced by shrunk
+                                                                  inverse-volatility
+                                                                  weighting (1/vol from
+                                                                  low_vol_63d, shrinkage
+                                                                  0.5).
+* **M — long_only_top30_pv_formulaic_streakdial_topkbuffer**    : Arm G with the
+                                                                  fresh-top-N selection
+                                                                  replaced by a buffered
+                                                                  top-k (TopkDropout-style,
+                                                                  buffer=5) to cut
+                                                                  membership turnover.
+* **N — long_only_top30_pv_formulaic_streakdial_gru**           : Arm G with the
+                                                                  linear ranker swapped
+                                                                  for a PyTorch GRU
+                                                                  sequence ranker (20d
+                                                                  windows, per-date IC
+                                                                  loss, GPU auto).
 
 D/E/F/G form a 2x2 ablation:
 
@@ -192,12 +232,19 @@ from quant_platform.services.research_service.campaigns.metrics.return_metrics i
     max_drawdown,
     non_overlapping_bucket_returns,
 )
+from quant_platform.services.research_service.campaigns.models.gbdt import GradientBoostedRanker
+from quant_platform.services.research_service.campaigns.models.sequence import GRUSequenceRanker
+from quant_platform.services.research_service.campaigns.portfolio.costs import QuadraticImpactCost
+from quant_platform.services.research_service.campaigns.portfolio.selection import (
+    BufferedTopKSelection,
+)
 from quant_platform.services.research_service.campaigns.portfolio.streak_risk import (
     FoldStreakRiskConfig,
 )
 from quant_platform.services.research_service.campaigns.portfolio.types import (
     CampaignPortfolioConfig,
 )
+from quant_platform.services.research_service.campaigns.portfolio.weighting import InverseVolWeight
 from quant_platform.services.research_service.modeling.walk_forward.walk_forward import (
     WalkForwardConfig,
 )
@@ -211,6 +258,14 @@ from quant_platform.services.research_service.sampling.samples import Supervised
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping
 
+    from quant_platform.services.research_service.campaigns.models.base import AlphaModel
+    from quant_platform.services.research_service.campaigns.portfolio.costs import TradingCostModel
+    from quant_platform.services.research_service.campaigns.portfolio.selection import (
+        SelectionStrategy,
+    )
+    from quant_platform.services.research_service.campaigns.portfolio.weighting import (
+        WeightingScheme,
+    )
     from quant_platform.services.research_service.sampling.arm_category import ArmCategory
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -288,6 +343,24 @@ class ArmSpec:
     requires_pca: bool = False
     portfolio_config_factory: Callable[[], CampaignPortfolioConfig] | None = None
     fold_streak_risk_config_factory: Callable[[], FoldStreakRiskConfig] | None = None
+    #: Optional pluggable alpha model. ``None`` keeps the default linear
+    #: IC-weighted ranker (arms A-H). Must be a module-level callable so the
+    #: spec stays picklable for the ProcessPoolExecutor (Windows spawn); the
+    #: model itself is constructed inside the worker, never pickled.
+    model_factory: Callable[[], AlphaModel] | None = None
+    #: Optional pluggable trading-cost model (long-only arms only). ``None``
+    #: keeps the behavior-preserving flat 10 bps/turnover linear cost (arms
+    #: A-J). Arm K supplies a quadratic impact model. Same picklability rule as
+    #: ``model_factory``: a module-level callable, built inside the worker.
+    cost_model_factory: Callable[[], TradingCostModel] | None = None
+    #: Optional pluggable position-weighting scheme (long-only arms only).
+    #: ``None`` keeps equal-weight (arms A-K). Arm L supplies inverse-vol
+    #: weighting. Same picklability rule as ``model_factory``.
+    weighting_factory: Callable[[], WeightingScheme] | None = None
+    #: Optional pluggable name-selection strategy (long-only arms only). ``None``
+    #: keeps the fresh top-N (arms A-L). Arm M supplies a buffered-top-k
+    #: (TopkDropout-style) selection. Same picklability rule as ``model_factory``.
+    selection_factory: Callable[[], SelectionStrategy] | None = None
 
 
 def _long_only_top30_config() -> CampaignPortfolioConfig:
@@ -324,6 +397,86 @@ def _default_fold_streak_risk_config() -> FoldStreakRiskConfig:
         floor_ic=-0.02,
         ceiling_ic=0.0,
     )
+
+
+def _gbdt_ranker_factory() -> AlphaModel:
+    """XGBoost gradient-boosted ranker for Arm I (GPU auto-detect, CPU fallback).
+
+    Module-level (not a lambda) so the owning ``ArmSpec`` pickles for the
+    ProcessPoolExecutor on Windows-spawn. The booster is built per fold inside
+    the worker; ``device="auto"`` uses CUDA when a working build is present
+    (e.g. the RTX 5080 here) and silently falls back to CPU otherwise.
+    """
+    return GradientBoostedRanker(objective="regression", device="auto")
+
+
+def _gbdt_rank_ranker_factory() -> AlphaModel:
+    """XGBoost learning-to-rank ranker for Arm J (rank:pairwise, GPU auto).
+
+    Same as Arm I's factory but with a pairwise-ranking objective and per-date
+    query groups. Targets the IC-quality gap that the MSE objective (Arm I) left
+    open: ranking the cross-section directly rather than predicting return levels.
+    """
+    return GradientBoostedRanker(objective="rank", device="auto")
+
+
+def _gru_ranker_factory() -> AlphaModel:
+    """PyTorch GRU sequence ranker for Arm N (IC loss, GPU auto-detect, CPU fallback).
+
+    Module-level (not a lambda) so the owning ``ArmSpec`` pickles for the
+    ProcessPoolExecutor on Windows-spawn. The net is built per fold inside the
+    worker; ``device="auto"`` uses CUDA when available (the RTX 5080 here) and
+    falls back to CPU. ``objective="ic"`` (per-date Pearson IC loss) is the right
+    default given the Arm I/J lesson that MSE-on-levels ranks poorly. Requires
+    the ``dl`` extra (torch); if absent the worker surfaces the arm as errored
+    rather than tearing down the run.
+    """
+    return GRUSequenceRanker(objective="ic", device="auto")
+
+
+def _quadratic_impact_cost_factory() -> TradingCostModel:
+    """Quadratic market-impact cost model for Arm K (qlib plan item 2).
+
+    Module-level (not a lambda) so the owning ``ArmSpec`` pickles for the
+    ProcessPoolExecutor on Windows-spawn. Keeps the same 10 bps/turnover linear
+    spread/commission as every other arm and adds a per-name quadratic impact
+    term anchored at 10 bps for a full single-name-cap (0.05) trade — the convex
+    cost the flat model ignored. See ADR-007. The anchor is a documented
+    modeling assumption (no per-name ADV in the weight-space evaluator), so Arm K
+    is a cost-*robustness* test of G, not a venue-calibrated one.
+    """
+    return QuadraticImpactCost(
+        linear_bps_per_turnover=SLIPPAGE_BPS,
+        impact_bps_at_cap=10.0,
+        single_name_cap=0.05,
+    )
+
+
+def _inverse_vol_weight_factory() -> WeightingScheme:
+    """Shrunk inverse-volatility weighting for Arm L (qlib plan item 3).
+
+    Module-level (not a lambda) so the owning ``ArmSpec`` pickles for the
+    ProcessPoolExecutor on Windows-spawn. Sizes the top-30 selected names by
+    1/vol, read from the point-in-time ``low_vol_63d`` price-volume feature (the
+    63d window matches the config's ``vol_lookback_days``). ``shrinkage=0.5``
+    blends the inverse-vol tilt halfway back toward equal weight — a documented
+    middle ground that blunts single-estimate vol noise without abandoning the
+    risk tilt. See ADR-008. Selection (the alpha) is unchanged from G; only the
+    per-name sizing differs.
+    """
+    return InverseVolWeight(vol_feature="low_vol_63d", shrinkage=0.5, vol_floor=0.005)
+
+
+def _buffered_topk_selection_factory() -> SelectionStrategy:
+    """Buffered top-k (TopkDropout-style) selection for Arm M (qlib plan item 5).
+
+    Module-level (not a lambda) so the owning ``ArmSpec`` pickles for the
+    ProcessPoolExecutor on Windows-spawn. Keeps a held name in the top-30 until
+    it slips past rank ``30 + buffer`` (buffer=5 here), so a name that wiggles
+    around the cutoff is not churned. Targets membership-driven turnover, the
+    cost the no-trade band + position cap only partly smooth. See ADR-009.
+    """
+    return BufferedTopKSelection(buffer=5)
 
 
 ARM_SPECS: tuple[ArmSpec, ...] = (
@@ -429,6 +582,127 @@ ARM_SPECS: tuple[ArmSpec, ...] = (
         requires_pca=False,
         portfolio_config_factory=_long_only_top30_config,
         fold_streak_risk_config_factory=_default_fold_streak_risk_config,
+    ),
+    # Arm I = Arm G's exact construction (no-PCA pv+formulaic panel, long-only
+    # top-30, streak dial) with the linear IC-weighted ranker swapped for an
+    # XGBoost gradient-boosted ranker. Direct A/B vs the production lead G:
+    # does a nonlinear learner that captures feature *interactions* move the
+    # binding ``fold_negative_ic_streak`` gate that the linear ranker, the
+    # dial, and the regime overlay could not? Same 36 features, same portfolio
+    # construction, same dial — only the model differs, so any delta is the
+    # model's. Requires the ``ml`` extra (xgboost); if absent the worker
+    # surfaces the arm as errored rather than tearing down the run.
+    ArmSpec(
+        cli_alias="I",
+        canonical_name="long_only_top30_pv_formulaic_streakdial_gbdt",
+        category="portfolio_candidate",
+        production_candidate=True,
+        panel_key="pv_form",
+        requires_pca=False,
+        portfolio_config_factory=_long_only_top30_config,
+        fold_streak_risk_config_factory=_default_fold_streak_risk_config,
+        model_factory=_gbdt_ranker_factory,
+    ),
+    # Arm J = Arm I with a learning-to-rank objective (rank:pairwise + per-date
+    # query groups) instead of MSE. Arm I showed the GBDT picks winners (higher
+    # total return) but ranks the cross-section poorly (ic_60d 0.028 < 0.03 gate,
+    # decile spread collapses) — MSE-on-levels is the wrong loss for a ranker.
+    # J optimizes the ordering the IC gate measures directly. Same panel, same
+    # construction, same dial — only the objective differs. Expectation: IC
+    # quality recovers; if the streak still holds at 4 it confirms the streak is
+    # model-invariant on this universe (ADR-006).
+    ArmSpec(
+        cli_alias="J",
+        canonical_name="long_only_top30_pv_formulaic_streakdial_gbdt_rank",
+        category="portfolio_candidate",
+        production_candidate=True,
+        panel_key="pv_form",
+        requires_pca=False,
+        portfolio_config_factory=_long_only_top30_config,
+        fold_streak_risk_config_factory=_default_fold_streak_risk_config,
+        model_factory=_gbdt_rank_ranker_factory,
+    ),
+    # Arm K = Arm G's exact construction (linear ranker, no-PCA pv+formulaic,
+    # long-only top-30, streak dial) priced through a quadratic market-impact
+    # cost model instead of the flat 10 bps/turnover. Only the cost accounting
+    # differs — the alpha, ranking, and weights are identical to G, so IC and
+    # streak are unchanged by construction; what moves is the post-cost Sharpe
+    # and return. This is the cost-robustness arm: does G's eligibility survive
+    # a convex impact model? It directly answers the pre-paper hardening concern
+    # that real slippage may be materially worse than the flat assumption. See
+    # ADR-007 (qlib plan item 2).
+    ArmSpec(
+        cli_alias="K",
+        canonical_name="long_only_top30_pv_formulaic_streakdial_quadcost",
+        category="portfolio_candidate",
+        production_candidate=True,
+        panel_key="pv_form",
+        requires_pca=False,
+        portfolio_config_factory=_long_only_top30_config,
+        fold_streak_risk_config_factory=_default_fold_streak_risk_config,
+        cost_model_factory=_quadratic_impact_cost_factory,
+    ),
+    # Arm L = Arm G's exact construction (linear ranker, no-PCA pv+formulaic,
+    # long-only top-30, streak dial, flat 10 bps cost) with equal-weight sizing
+    # replaced by shrunk inverse-volatility weighting. Only the per-name SIZE
+    # distribution differs — selection (the alpha) and gross budget are
+    # identical to G, so the selected set is unchanged; what moves is risk
+    # concentration and therefore Sharpe/turnover. Does sizing by 1/vol lift
+    # risk-adjusted return over equal weight on this universe? See ADR-008
+    # (qlib plan item 3).
+    ArmSpec(
+        cli_alias="L",
+        canonical_name="long_only_top30_pv_formulaic_streakdial_invvol",
+        category="portfolio_candidate",
+        production_candidate=True,
+        panel_key="pv_form",
+        requires_pca=False,
+        portfolio_config_factory=_long_only_top30_config,
+        fold_streak_risk_config_factory=_default_fold_streak_risk_config,
+        weighting_factory=_inverse_vol_weight_factory,
+    ),
+    # Arm M = Arm G's exact construction (linear ranker, no-PCA pv+formulaic,
+    # long-only top-30, streak dial, flat 10 bps cost, equal weight) with the
+    # fresh-top-N selection replaced by a buffered top-k (TopkDropout-style):
+    # a held name keeps its slot until it slips past rank 30 + buffer, so a
+    # name wiggling around the cutoff isn't churned. Changes the held book
+    # (returns + turnover) but not the IC, which the driver measures over the
+    # full scored cross-section, not the held names. Does cutting
+    # membership-driven turnover beat the cost of holding slightly-lower-ranked
+    # names on a construction that already has a no-trade band + caps + dial?
+    # See ADR-009 (qlib plan item 5).
+    ArmSpec(
+        cli_alias="M",
+        canonical_name="long_only_top30_pv_formulaic_streakdial_topkbuffer",
+        category="portfolio_candidate",
+        production_candidate=True,
+        panel_key="pv_form",
+        requires_pca=False,
+        portfolio_config_factory=_long_only_top30_config,
+        fold_streak_risk_config_factory=_default_fold_streak_risk_config,
+        selection_factory=_buffered_topk_selection_factory,
+    ),
+    # Arm N = Arm G's exact construction (no-PCA pv+formulaic panel, long-only
+    # top-30, streak dial) with the linear IC ranker swapped for a PyTorch GRU
+    # sequence ranker (per-date IC loss, GPU auto). The GRU consumes a 20-day
+    # sequence of each name's recent feature vectors (reconstructed via
+    # as_of_index + a train-tail cache, with a log1p time-gap channel) rather
+    # than a single row. The qlib model-zoo sequence learner ADR-006 deferred;
+    # proves the AlphaModel seam carries a heavy torch model. Same 36 features,
+    # same construction — only the model differs. Honest prior: unlikely to beat
+    # the linear ranker's IC at this horizon, so most likely an informative
+    # negative result. Requires the `dl` extra (torch); absent -> worker errors
+    # the arm without tearing down the run. See ADR-010.
+    ArmSpec(
+        cli_alias="N",
+        canonical_name="long_only_top30_pv_formulaic_streakdial_gru",
+        category="portfolio_candidate",
+        production_candidate=True,
+        panel_key="pv_form",
+        requires_pca=False,
+        portfolio_config_factory=_long_only_top30_config,
+        fold_streak_risk_config_factory=_default_fold_streak_risk_config,
+        model_factory=_gru_ranker_factory,
     ),
 )
 ARM_SPEC_BY_KEY: dict[str, ArmSpec] = {}
@@ -745,6 +1019,10 @@ def run_arm(
     thresholds: AlphaEligibilityThresholds,
     portfolio_config: CampaignPortfolioConfig | None = None,
     fold_streak_risk_config: FoldStreakRiskConfig | None = None,
+    model: AlphaModel | None = None,
+    cost_model: TradingCostModel | None = None,
+    weighting: WeightingScheme | None = None,
+    selection: SelectionStrategy | None = None,
 ) -> tuple[WalkForwardEvidence, AlphaEligibilityThresholds, WalkForwardConfig]:
     # purge_days = HORIZON_DAYS is the audit-mandated minimum: a calendar
     # gap shorter than the label horizon lets training labels leak past
@@ -762,17 +1040,23 @@ def run_arm(
         label_horizon_days=HORIZON_DAYS,
     )
     streak_tag = " +streak-dial" if fold_streak_risk_config else ""
+    # ``model is None`` keeps the legacy linear ranker and its MODEL_VERSION so
+    # arms A-H emit unchanged evidence; a supplied model stamps its own name.
+    model_version = model.name if model is not None else MODEL_VERSION
+    cost_tag = f", cost={cost_model.name}" if cost_model is not None else ""
+    weight_tag = f", weighting={weighting.name}" if weighting is not None else ""
+    select_tag = f", selection={selection.name}" if selection is not None else ""
     print(
         f"\n>>> Arm {arm_name}: {len(samples):,} samples, "
         f"{len(feature_names)} features, "
         f"portfolio={'long-only' if portfolio_config else 'signed-rank'}{streak_tag}, "
-        f"thresholds={thresholds.name}"
+        f"model={model_version}{cost_tag}{weight_tag}{select_tag}, thresholds={thresholds.name}"
     )
     t0 = time.monotonic()
     evidence = run_sample_walk_forward(
         samples=samples,
         config=wf_config,
-        model_version=MODEL_VERSION,
+        model_version=model_version,
         feature_set_version=f"{FEATURE_SET_VERSION}--{arm_name}",
         thresholds=thresholds,
         slippage_bps_per_turnover=SLIPPAGE_BPS,
@@ -781,6 +1065,10 @@ def run_arm(
         return_scale=1.0,
         portfolio_config=portfolio_config,
         fold_streak_risk_config=fold_streak_risk_config,
+        model=model,
+        cost_model=cost_model,
+        weighting=weighting,
+        selection=selection,
     )
     print(
         f"    {arm_name}: folds={len(evidence.folds)} "
@@ -1249,6 +1537,14 @@ def _run_one_arm_job(job: _ArmJob) -> _ArmJobResult:
                 if job.spec.fold_streak_risk_config_factory
                 else None
             )
+            # Built inside the worker (not pickled across the process boundary)
+            # — the GBDT model holds a lazily-imported xgboost handle.
+            model = job.spec.model_factory() if job.spec.model_factory else None
+            # Cost model is cheap + picklable, but build it in the worker too so
+            # all per-arm construction lives on one side of the boundary.
+            cost_model = job.spec.cost_model_factory() if job.spec.cost_model_factory else None
+            weighting = job.spec.weighting_factory() if job.spec.weighting_factory else None
+            selection = job.spec.selection_factory() if job.spec.selection_factory else None
             # Look up the right eligibility threshold set for this
             # arm's category. ADR-004 records the per-category
             # governance contract; a missing category here raises
@@ -1265,6 +1561,10 @@ def _run_one_arm_job(job: _ArmJob) -> _ArmJobResult:
                 thresholds=selected_thresholds,
                 portfolio_config=portfolio_config,
                 fold_streak_risk_config=streak_config,
+                model=model,
+                cost_model=cost_model,
+                weighting=weighting,
+                selection=selection,
             )
             # Derive realized_mode_used from observed samples so the
             # evidence field reports a fact, not an assumption. The

@@ -55,6 +55,25 @@ class AlphaEligibilityThresholds:
     min_oos_rolling_ic: float = 0.05
     min_ic_60d: float = 0.03
     max_fold_negative_ic_streak: int = 2
+    #: Drawdown-conditioned streak relaxation (ADR-004 Option D). When set, a
+    #: streak above ``max_fold_negative_ic_streak`` (the strict floor) is
+    #: tolerated up to this cap **only if** the drawdown during the worst streak
+    #: stayed inside ``streak_containment_max_drawdown``; otherwise the strict
+    #: floor applies. When ``None`` (default) the streak gate is the plain
+    #: ``streak <= floor`` check and the ``max_drawdown_during_worst_streak``
+    #: metric is never read — so callers predating the field are unaffected.
+    #: Requires the metrics dict to carry ``max_drawdown_during_worst_streak``
+    #: whenever a streak exceeds the floor and this is non-``None``.
+    max_fold_negative_ic_streak_if_dd_contained: int | None = None
+    #: Within-worst-streak drawdown bound for the relaxation above. It must be
+    #: **tighter** than ``max_drawdown``: the within-streak drawdown is a subset
+    #: of the full-run drawdown, so reusing the full-run bound would make the
+    #: condition redundant (it could never independently fail). A tight bound
+    #: instead distinguishes "the construction absorbed the IC inversion" (small
+    #: within-streak DD — relaxation earned) from "the episode caused the loss"
+    #: (within-streak DD near the full bound — relaxation forfeit, even if the
+    #: full-run DD gate still passes). ``None`` falls back to ``max_drawdown``.
+    streak_containment_max_drawdown: float | None = None
     max_drawdown: float = -0.20
     min_slippage_adjusted_sharpe: float = 1.0
     #: Human-readable label for this threshold set. Serialised into the
@@ -89,13 +108,20 @@ RESEARCH_RANKER_BASELINE_THRESHOLDS: AlphaEligibilityThresholds = AlphaEligibili
 
 #: Default thresholds for **portfolio_candidate** arms (long-only top-N
 #: with per-name + gross caps + monthly rebal). The construction absorbs
-#: negative-IC stretches without translating them into catastrophic
-#: P&L, so the streak gate widens from 2 to 4 folds (~84 trading days).
-#: In exchange, the drawdown gate tightens from -20% to -10%: if a
-#: tagged-candidate's construction misbehaves and DD blows past -10%,
-#: the looser streak gate doesn't help — the DD gate fails first.
-#: Together these encode "we trust the construction iff it actually
-#: protects you."
+#: negative-IC stretches without translating them into catastrophic P&L.
+#:
+#: Streak gate (ADR-004 addendum, 2026-05-28). The earlier ``streak <= 4``
+#: flat gate could not be validated out-of-sample — the held-out calibration
+#: showed ``4`` was reverse-engineered from the full sample and that the streak
+#: metric is regime-contingent (no fixed value generalises). It is replaced by
+#: a **drawdown-conditioned** gate: the strict floor is ``2`` (same as the
+#: baseline), but a streak up to ``6`` is tolerated *iff the drawdown during
+#: that streak stayed inside the −10% bound*. This earns the laxity per-episode
+#: from the construction's realized protection rather than granting it to any
+#: 4-streak. The ``6`` hard cap still rejects genuinely broken runs (e.g. the
+#: GBDT-rank arm's streak-9). DD gate stays −10% (vs the baseline's −20%): if a
+#: candidate's construction misbehaves, the DD gate fails first and the streak
+#: relaxation is simultaneously forfeit.
 #:
 #: This is the eligibility-threshold separation called out in
 #: ADR-003 ("per-category eligibility thresholds"); it lets governance
@@ -103,8 +129,16 @@ RESEARCH_RANKER_BASELINE_THRESHOLDS: AlphaEligibilityThresholds = AlphaEligibili
 #: "the alpha is noisy but the construction handles it" (candidates
 #: can clear).
 PORTFOLIO_CANDIDATE_THRESHOLDS: AlphaEligibilityThresholds = AlphaEligibilityThresholds(
-    name="portfolio_candidate_v1",
-    max_fold_negative_ic_streak=4,
+    name="portfolio_candidate_v2",
+    max_fold_negative_ic_streak=2,
+    max_fold_negative_ic_streak_if_dd_contained=6,
+    # Tighter than the −10% full-run bound: a streak episode the construction
+    # truly absorbs leaves a small localized drawdown. Across the realized_v2
+    # A–J set every streak-≤6 candidate's within-streak drawdown was ≤1.4%
+    # (Arm G's was ~−0.3%), so −2% admits all genuinely-absorbed episodes with
+    # margin while still forfeiting the relaxation for any episode that actually
+    # bit the book. Operator-tunable via scripts/calibrate_eligibility_thresholds.py.
+    streak_containment_max_drawdown=-0.02,
     max_drawdown=-0.10,
 )
 

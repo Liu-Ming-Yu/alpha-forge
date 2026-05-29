@@ -232,6 +232,69 @@ async def test_alpha_promote_and_rollback_write_audit_heartbeats(
 
 
 @pytest.mark.asyncio
+async def test_alpha_promote_attaches_evidence_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = _Registry()
+    repo = _PerformanceRepo()
+    monkeypatch.setattr(alpha, "build_model_registry", lambda _dsn: registry)
+    monkeypatch.setattr(alpha, "build_performance_repository", lambda _dsn: repo)
+    settings = PlatformSettings(
+        _env_file=None,
+        storage=StorageSettings(postgres_dsn="postgresql+psycopg://u:p@localhost/db"),
+    )
+
+    await alpha.alpha_promote(
+        settings,
+        signal_name="long_only_top30_pv_formulaic_streakdial",
+        signal_type="xgboost",
+        model_version="ic-weighted-non-negative",
+        feature_set_version="latest-stack-v1--g",
+        engine_version="engine-v1",
+        artifact_manifest=None,
+        rollback_target="",
+        as_of=_NOW,
+        evidence_metadata={"source": "backtest_latest_stack", "eligibility": {"passed": True}},
+    )
+
+    metadata = registry.registered[0]["metadata"]
+    # The adapter's provenance rides under a single "evidence" key...
+    assert metadata["evidence"]["source"] == "backtest_latest_stack"
+    assert metadata["evidence"]["eligibility"]["passed"] is True
+    # ...without disturbing the existing alpha block / engine_version.
+    assert metadata["engine_version"] == "engine-v1"
+    assert metadata["alpha"]["signal_type"] == "xgboost"
+
+
+@pytest.mark.asyncio
+async def test_alpha_promote_omits_evidence_key_when_not_supplied(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = _Registry()
+    repo = _PerformanceRepo()
+    monkeypatch.setattr(alpha, "build_model_registry", lambda _dsn: registry)
+    monkeypatch.setattr(alpha, "build_performance_repository", lambda _dsn: repo)
+    settings = PlatformSettings(
+        _env_file=None,
+        storage=StorageSettings(postgres_dsn="postgresql+psycopg://u:p@localhost/db"),
+    )
+
+    await alpha.alpha_promote(
+        settings,
+        signal_name="xsec",
+        signal_type="xgboost",
+        model_version="v2",
+        feature_set_version="features-v2",
+        engine_version="engine-v1",
+        artifact_manifest=None,
+        rollback_target="v1",
+        as_of=_NOW,
+    )
+
+    assert "evidence" not in registry.registered[0]["metadata"]
+
+
+@pytest.mark.asyncio
 async def test_alpha_promote_requires_postgres_dsn(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("QP__STORAGE__POSTGRES_DSN", raising=False)
     with pytest.raises(RuntimeError, match="alpha promote requires"):

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from quant_platform.core.constants import BPS_PER_UNIT
+from quant_platform.services.research_service.campaigns.portfolio.costs import LinearTurnoverCost
 from quant_platform.services.research_service.campaigns.portfolio.targets import (
     apply_no_trade_band,
     apply_position_change_cap,
@@ -27,6 +27,13 @@ if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
     from datetime import datetime
 
+    from quant_platform.services.research_service.campaigns.portfolio.costs import TradingCostModel
+    from quant_platform.services.research_service.campaigns.portfolio.selection import (
+        SelectionStrategy,
+    )
+    from quant_platform.services.research_service.campaigns.portfolio.weighting import (
+        WeightingScheme,
+    )
     from quant_platform.services.research_service.sampling.samples import SupervisedAlphaSample
 
 
@@ -37,6 +44,9 @@ def evaluate_long_only_portfolio(
     config: CampaignPortfolioConfig,
     previous_weights: Mapping[uuid.UUID, float] | None = None,
     exposure_scale: float = 1.0,
+    cost_model: TradingCostModel | None = None,
+    weighting: WeightingScheme | None = None,
+    selection: SelectionStrategy | None = None,
 ) -> PortfolioEvaluation:
     """Build path-dependent long-only daily returns from scored samples.
 
@@ -66,6 +76,33 @@ def evaluate_long_only_portfolio(
       returns ``max_daily_turnover`` when it scales, but the subsequent
       ``enforce_weight_limits`` step can shrink that further, so trusting the
       scaler's return value would overcharge slippage.
+
+    Cost
+    ----
+    ``cost_model`` prices each rebalance from its per-name trade vector. When it
+    is ``None`` the evaluator builds a :class:`LinearTurnoverCost` from
+    ``slippage_bps_per_turnover`` — the behavior-preserving default that charges
+    exactly ``turnover * bps / 1e4`` as the inlined code did. A convex model
+    (e.g. :class:`QuadraticImpactCost`, Arm K) is a drop-in swap; nothing else in
+    the construction path changes.
+
+    Weighting
+    ---------
+    ``weighting`` sizes the selected top-N names. ``None`` uses
+    :class:`EqualWeight` (the prior behavior, bit-identical). An inverse-vol
+    scheme (:class:`InverseVolWeight`, Arm L) is a drop-in swap — it changes only
+    the size distribution, never which names are held, and shares the same gross
+    budget, so the selected set is unchanged versus the equal-weight arm.
+
+    Selection
+    ---------
+    ``selection`` chooses which names to hold. ``None`` uses
+    :class:`TopNSelection` (the fresh top-N, bit-identical). A buffered strategy
+    (:class:`BufferedTopKSelection`, Arm M) keeps slipping incumbents instead of
+    churning them — changing the held book (returns + turnover) but not the
+    reported IC, which is measured over the full scored cross-section each day,
+    not the held names. The current book (``last_weights``) is passed as the
+    incumbent set on every rebalance.
     """
     by_day: dict[datetime, list[tuple[SupervisedAlphaSample, float]]] = {}
     for row, score in scored:
@@ -79,7 +116,14 @@ def evaluate_long_only_portfolio(
         clean_weights(previous_weights or {}),
         config=config,
     )
-    bps_per_turnover = float(slippage_bps_per_turnover) / BPS_PER_UNIT
+    # ``cost_model=None`` rebuilds the behavior-preserving linear model from the
+    # flat ``slippage_bps_per_turnover`` so pre-seam callers are bit-identical
+    # (LinearTurnoverCost computes exactly ``turnover * bps / 1e4``). An explicit
+    # model (e.g. QuadraticImpactCost, Arm K) prices each rebalance from its
+    # per-name trade vector instead.
+    active_cost_model = (
+        cost_model if cost_model is not None else LinearTurnoverCost(slippage_bps_per_turnover)
+    )
     if exposure_scale < 0.0:
         raise ValueError("exposure_scale must be >= 0")
     rebalance_interval = max(1, int(config.rebalance_interval_days))
@@ -106,7 +150,16 @@ def evaluate_long_only_portfolio(
         # rebalance days themselves.
         is_rebalance = (day_index % rebalance_interval) == 0
         if is_rebalance:
-            target = raw_long_only_target(rows, config=config)
+            # ``last_weights`` is the prior rebalance's book here (reassigned at
+            # the end of the loop), so it is the correct current-holdings set for
+            # a buffered selection's incumbent test.
+            target = raw_long_only_target(
+                rows,
+                config=config,
+                weighting=weighting,
+                selection=selection,
+                current_holdings=frozenset(last_weights),
+            )
             target = enforce_weight_limits(target, config=config)
             target = {
                 instrument_id: weight * exposure_scale for instrument_id, weight in target.items()
@@ -159,7 +212,17 @@ def evaluate_long_only_portfolio(
             weight * row_returns.get(instrument_id, 0.0)
             for instrument_id, weight in today_weights.items()
         )
-        slippage_cost = turnover * bps_per_turnover
+        # Per-name trade vector (today − prior); ``last_weights`` is still the
+        # prior day's book here (reassigned at the end of the loop). The cost
+        # model prices the rebalance from it. On non-rebalance days
+        # ``today_weights == last_weights`` so the vector is all-zero -> 0 cost,
+        # matching the prior ``turnover * bps`` behavior (turnover is 0 too).
+        trades = {
+            instrument_id: today_weights.get(instrument_id, 0.0)
+            - last_weights.get(instrument_id, 0.0)
+            for instrument_id in set(today_weights) | set(last_weights)
+        }
+        slippage_cost = active_cost_model.cost(trades)
         returns.append(gross_return - slippage_cost)
         turnovers.append(turnover)
         diagnostics.append(
