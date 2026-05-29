@@ -24,6 +24,7 @@ from quant_platform.research.features.formulaic.mining import (
     AlphaGrammar,
     EvolutionarySearch,
     MiningFoldConfig,
+    PolicySearch,
     RandomSearch,
     make_forward_return_labels,
     mine_alphas,
@@ -124,6 +125,13 @@ def test_build_search_evolutionary() -> None:
     assert isinstance(search, EvolutionarySearch)
     assert search.population_size == 20
     assert search.n_generations == 3
+
+
+def test_build_search_policy() -> None:
+    args = _args(search="policy", n_candidates=17)
+    search = mine_alphas_script.build_search(args)
+    assert isinstance(search, PolicySearch)
+    assert search.n_candidates == 17
 
 
 def test_build_search_rejects_unknown_algorithm() -> None:

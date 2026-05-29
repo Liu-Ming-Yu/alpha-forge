@@ -27,6 +27,7 @@ from quant_platform.cli.commands.research.request_factories import (
     walk_forward_request,
 )
 from quant_platform.cli.registry import bind_command
+from quant_platform.config_signal_models.alpha import ALPHA_SOURCE_TYPES
 
 
 def register(sub: Any) -> None:
@@ -164,7 +165,7 @@ def _register_alpha(sub: Any) -> None:
     alpha_assert_p.add_argument("--signal-name", required=True)
     alpha_assert_p.add_argument(
         "--signal-type",
-        choices=["xgboost", "text", "event", "intraday"],
+        choices=list(ALPHA_SOURCE_TYPES),
         required=True,
     )
     alpha_assert_p.add_argument("--as-of", required=True, type=datetime.fromisoformat)
@@ -175,7 +176,7 @@ def _register_alpha(sub: Any) -> None:
     alpha_promote_p.add_argument("--signal-name", required=True)
     alpha_promote_p.add_argument(
         "--signal-type",
-        choices=["xgboost", "text", "event", "intraday"],
+        choices=list(ALPHA_SOURCE_TYPES),
         required=True,
     )
     alpha_promote_p.add_argument("--model-version", required=True)

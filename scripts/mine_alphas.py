@@ -8,8 +8,8 @@ wraps it for ad-hoc operator runs:
    parquet store.
 2. Builds a :class:`MarketPanel`, derives forward-return labels.
 3. Configures :class:`AlphaGrammar` + :class:`AdmissionGate` + the
-   requested search algorithm (random or evolutionary) + an optional
-   :class:`MiningFoldConfig` for K-fold OOS evaluation.
+   requested search algorithm (random, evolutionary, or policy) + an
+   optional :class:`MiningFoldConfig` for K-fold OOS evaluation.
 4. Calls :func:`mine_alphas` with the assembled config.
 5. Writes one JSONL line per provenance record — admitted or
    rejected — to ``--output``. Each line carries the full serialised
@@ -78,6 +78,7 @@ from quant_platform.research.features.formulaic.mining import (
     AlphaGrammar,
     EvolutionarySearch,
     MiningFoldConfig,
+    PolicySearch,
     RandomSearch,
     SearchAlgorithm,
     make_forward_return_labels,
@@ -154,16 +155,17 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--search",
-        choices=("random", "evolutionary"),
+        choices=("random", "evolutionary", "policy"),
         default="random",
         help="Search algorithm. random = uniform AST sampling; "
-        "evolutionary = small GP loop with tournament selection + mutation.",
+        "evolutionary = small GP loop with tournament selection + mutation; "
+        "policy = qlib-style policy-guided mutation of one trajectory.",
     )
     parser.add_argument(
         "--n-candidates",
         type=int,
         default=200,
-        help="(random search) Total candidates to evaluate.",
+        help="(random / policy search) Total candidates to evaluate.",
     )
     parser.add_argument(
         "--population",
@@ -370,6 +372,8 @@ def build_search(args: argparse.Namespace) -> SearchAlgorithm:
             population_size=args.population,
             n_generations=args.generations,
         )
+    if args.search == "policy":
+        return PolicySearch(n_candidates=args.n_candidates)
     raise ValueError(f"unknown --search: {args.search!r}")
 
 

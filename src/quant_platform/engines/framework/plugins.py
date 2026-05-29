@@ -22,6 +22,9 @@ from quant_platform.services.portfolio_service.portfolio_constructor import (
 from quant_platform.services.portfolio_service.vol_sizing import (
     VolTargetedPortfolioConstructor,
 )
+from quant_platform.services.research_service.features.pv_formulaic.family import (
+    PV_FORMULAIC_FEATURE_SET_VERSION,
+)
 from quant_platform.services.signal_service.scoring import LinearWeightSignalModel
 
 if TYPE_CHECKING:
@@ -90,6 +93,10 @@ class BuiltInStrategyPlugin:
     default_max_positions: int
     default_rebalance_interval_seconds: float
     default_universe_symbols: tuple[str, ...] = ()
+    #: Feature-set version whose family the engine schedules + computes each cycle.
+    #: Empty ⇒ the engine default (``close``); set it to bind a non-close family
+    #: (e.g. ``pv-formulaic-live-v1`` for Arm G). See ``EngineConfig``.
+    feature_set_version: str = ""
 
     def build_signal_model(
         self,
@@ -138,6 +145,7 @@ class BuiltInStrategyPlugin:
             instrument_contracts=instrument_contracts or {},
             plugin_name=self.name,
             feature_set_name=self.feature_spec.name,
+            feature_set_version=self.feature_set_version,
             required_features=self.feature_spec.required_features,
             signal_model_factory=lambda w, v: self.build_signal_model(w, v),
             portfolio_constructor_factory=self.build_portfolio_constructor,
@@ -158,6 +166,35 @@ _ETF_FEATURES = (
     "vol_compression",
     "distance_to_52w_high",
 )
+
+# Arm G (long_only_top30_pv_formulaic_streakdial) — the production research lead.
+# Frozen IC-weighted-non-negative weights from the promoted evidence
+# (``backtest_latest_stack_realized_v2/arm_long_only_top30_pv_formulaic_streakdial.json``,
+# model_version ``ic-weighted-non-negative``). The 20 keys are the live
+# pv_formulaic feature names (see ``PV_FORMULAIC_FEATURE_NAMES``); weights sum to 1.0.
+_ARM_G_FACTOR_WEIGHTS: dict[str, float] = {
+    "close_to_open_return": 0.023050530701360726,
+    "distance_to_52w_high": 0.0061608259803869105,
+    "dollar_volume_20d": 0.05718013891269491,
+    "drawdown_from_252d_high": 0.0061608259803869105,
+    "high_low_range_1d": 0.12232121378085248,
+    "high_low_range_20d": 0.10903636583858742,
+    "mom_12_1": 0.060791507163893914,
+    "mom_3_1": 0.04851448819474293,
+    "mom_6_1": 0.05551777223894792,
+    "overnight_gap": 0.023050530701360726,
+    "ret_126d": 0.05261728109533933,
+    "ret_21d": 0.05025937382017044,
+    "ret_252d": 0.06836019406551445,
+    "ret_63d": 0.07751913862540603,
+    "reversal_1d": 0.05964022188804077,
+    "reversal_5d": 0.05224052713604494,
+    "volume_z_20d": 0.08491219912439091,
+    "wq_alpha_002_paraphrase": 0.0020047688478355375,
+    "wq_alpha_012": 0.003010315784891496,
+    "wq_alpha_041": 0.03765178011915117,
+}
+_ARM_G_FEATURES = tuple(sorted(_ARM_G_FACTOR_WEIGHTS))
 
 _PLUGINS: dict[str, BuiltInStrategyPlugin] = {
     "cross_sectional_equity": BuiltInStrategyPlugin(
@@ -195,6 +232,23 @@ _PLUGINS: dict[str, BuiltInStrategyPlugin] = {
         default_max_positions=4,
         default_rebalance_interval_seconds=86400.0,
         default_universe_symbols=("SPY", "QQQ", "IWM", "TLT", "GLD", "XLK", "XLF", "XLE", "XLV"),
+    ),
+    "arm_g": BuiltInStrategyPlugin(
+        name="arm_g_pv_formulaic_v1",
+        version="0.1.0",
+        feature_spec=FeatureSpec(
+            name="pv-formulaic-live",
+            version=PV_FORMULAIC_FEATURE_SET_VERSION,
+            required_features=_ARM_G_FEATURES,
+        ),
+        default_factor_weights=_ARM_G_FACTOR_WEIGHTS,
+        default_max_positions=30,
+        # Monthly cadence (~21 trading days) to track the backtest holding period
+        # and its 0.48% turnover; increment 4 reconciles live turnover vs evidence.
+        default_rebalance_interval_seconds=21 * 86400.0,
+        # Bind the live pv_formulaic family so the engine computes G's 20 features
+        # (not the default ``close`` family).
+        feature_set_version=PV_FORMULAIC_FEATURE_SET_VERSION,
     ),
 }
 

@@ -163,6 +163,31 @@ def test_command_descriptors_build_typed_requests(
     assert isinstance(command.request_factory(args), command.request_type)
 
 
+def test_alpha_promote_accepts_classical_signal_type() -> None:
+    # Regression: the promote/assert --signal-type choices once omitted
+    # "classical", blocking promotion of linear (IC-weighted ranker) arms such
+    # as the latest-stack lead. They now derive from ALPHA_SOURCE_TYPES.
+    args = app.build_parser().parse_args(
+        [
+            "alpha",
+            "promote",
+            "--signal-name",
+            "long_only_top30_pv_formulaic_streakdial",
+            "--signal-type",
+            "classical",
+            "--model-version",
+            "ic-weighted-non-negative",
+            "--feature-set-version",
+            "latest-stack-v1--g",
+            "--engine-version",
+            "engine-v1",
+            "--as-of",
+            "2026-05-28T00:00:00+00:00",
+        ]
+    )
+    assert args.signal_type == "classical"
+
+
 @pytest.mark.parametrize(
     ("argv", "use_case_name", "expected_request"),
     [

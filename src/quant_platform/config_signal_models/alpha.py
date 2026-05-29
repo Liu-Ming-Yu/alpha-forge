@@ -7,6 +7,16 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+#: Canonical alpha-source taxonomy. ``classical`` is the always-present linear
+#: baseline (the latest-stack IC-weighted ranker / ``LinearWeightSignalModel``);
+#: the rest are optional augmentations capped by ``max_non_classical_weight``.
+#: Single source of truth — the ensemble-weight validator below and the
+#: ``quant-platform alpha`` promote/assert CLI choices both derive their allowed
+#: set from this, so the promotion taxonomy can't drift out of sync (it once
+#: did: the CLI omitted ``classical``, which blocked promoting linear rankers
+#: such as the latest-stack lead arm).
+ALPHA_SOURCE_TYPES: tuple[str, ...] = ("classical", "xgboost", "text", "event", "intraday")
+
 
 class AlphaSettings(BaseModel):
     """Governed alpha-promotion and ensemble configuration."""
@@ -90,7 +100,7 @@ class AlphaSettings(BaseModel):
     @field_validator("source_weights")
     @classmethod
     def validate_source_weights(cls, value: dict[str, float]) -> dict[str, float]:
-        allowed = {"classical", "xgboost", "text", "event", "intraday"}
+        allowed = set(ALPHA_SOURCE_TYPES)
         unknown = sorted(set(value) - allowed)
         if unknown:
             raise ValueError(f"unknown alpha source weights: {', '.join(unknown)}")

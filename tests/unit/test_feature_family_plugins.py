@@ -61,13 +61,15 @@ def _request(version: str, instruments: tuple[uuid.UUID, ...], bar_data: object)
 def test_build_feature_registry_registers_every_family() -> None:
     registry = build_feature_registry(InMemoryFeatureRepository())
     keys = set(registry.keys())
-    # close + catalyst v10 + event + composite = 4 family/versions.
-    assert len(keys) == 4
+    # close + catalyst v10 + event + composite + pv_formulaic = 5 family/versions.
+    assert len(keys) == 5
     assert "close:1.1.0" in keys
     assert "catalyst:paper-alpha-catalyst-v10" in keys
     assert "composite:paper-alpha-composite-v1" in keys
+    assert "pv_formulaic:pv-formulaic-live-v1" in keys
     assert registry.family_for_version("paper-alpha-catalyst-v10") == "catalyst"
     assert registry.family_for_version("1.1.0") == "close"
+    assert registry.family_for_version("pv-formulaic-live-v1") == "pv_formulaic"
     assert registry.family_for_version("not-a-real-version") is None
 
 

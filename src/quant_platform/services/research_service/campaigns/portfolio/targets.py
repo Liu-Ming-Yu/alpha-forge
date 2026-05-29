@@ -5,12 +5,21 @@ from __future__ import annotations
 import math
 from typing import TYPE_CHECKING
 
+from quant_platform.services.research_service.campaigns.portfolio.selection import TopNSelection
+from quant_platform.services.research_service.campaigns.portfolio.weighting import EqualWeight
+
 if TYPE_CHECKING:
     import uuid
     from collections.abc import Mapping, Sequence
 
+    from quant_platform.services.research_service.campaigns.portfolio.selection import (
+        SelectionStrategy,
+    )
     from quant_platform.services.research_service.campaigns.portfolio.types import (
         CampaignPortfolioConfig,
+    )
+    from quant_platform.services.research_service.campaigns.portfolio.weighting import (
+        WeightingScheme,
     )
     from quant_platform.services.research_service.sampling.samples import SupervisedAlphaSample
 
@@ -21,20 +30,49 @@ def raw_long_only_target(
     rows: Sequence[tuple[SupervisedAlphaSample, float]],
     *,
     config: CampaignPortfolioConfig,
+    weighting: WeightingScheme | None = None,
+    selection: SelectionStrategy | None = None,
+    current_holdings: frozenset[uuid.UUID] | None = None,
 ) -> dict[uuid.UUID, float]:
-    positive = sorted(
+    """Selected names, sized by ``weighting`` and scaled to the investable-gross
+    budget.
+
+    ``selection=None`` uses :class:`TopNSelection` (the fresh top-N by score) and
+    ``weighting=None`` uses :class:`EqualWeight`, together reproducing the prior
+    arithmetic bit-for-bit: equal weight's per-name budget was
+    ``min(max_single_name_weight, investable / N)``, i.e. a total gross of
+    ``min(N · cap, investable)``. That same gross is computed here and split by
+    the weighting scheme's proportions, so every scheme holds the same gross and
+    only the *distribution* across names differs. Per-name and gross caps are
+    enforced downstream by ``enforce_weight_limits``, identically for every
+    scheme.
+
+    ``selection`` chooses *which* names to hold from the positive-score
+    candidates; ``current_holdings`` (the prior rebalance's book) lets a buffered
+    strategy (:class:`BufferedTopKSelection`, Arm M) keep slipping incumbents
+    rather than churn them. The default ignores ``current_holdings``.
+    """
+    selector: SelectionStrategy = selection if selection is not None else TopNSelection()
+    scheme: WeightingScheme = weighting if weighting is not None else EqualWeight()
+    ranked = sorted(
         ((row, score) for row, score in rows if score > 0.0),
         key=lambda item: item[1],
         reverse=True,
-    )[: int(config.top_n)]
-    if not positive:
+    )
+    selected = selector.select(
+        ranked,
+        top_n=int(config.top_n),
+        current_holdings=current_holdings if current_holdings is not None else frozenset(),
+    )
+    if not selected:
         return {}
     investable = min(float(config.max_gross_exposure), 1.0 - float(config.min_cash_buffer))
-    weight_per_name = min(
-        float(config.max_single_name_weight),
-        investable / max(1, len(positive)),
-    )
-    return {row.instrument_id: weight_per_name for row, _ in positive}
+    target_gross = min(investable, len(selected) * float(config.max_single_name_weight))
+    proportions = scheme.proportions(selected)
+    return {
+        row.instrument_id: target_gross * proportion
+        for (row, _), proportion in zip(selected, proportions, strict=True)
+    }
 
 
 def enforce_weight_limits(

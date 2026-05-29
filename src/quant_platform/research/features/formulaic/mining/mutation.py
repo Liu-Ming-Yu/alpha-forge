@@ -60,10 +60,14 @@ from quant_platform.research.features.formulaic.operators import (
 
 if TYPE_CHECKING:
     import random
+    from collections.abc import Callable
 
     from quant_platform.research.features.formulaic.mining.grammar import (
         AlphaGrammar,
     )
+
+    #: Signature shared by every mutator: ``(expr, grammar, rng) -> expr``.
+    Mutator = Callable[[Expression, AlphaGrammar, random.Random], Expression]
 
 
 # ---------------------------------------------------------------------------
@@ -361,6 +365,21 @@ _MUTATORS = {
 }
 
 
+def mutator_for_kind(kind: str) -> Mutator:
+    """Return the mutator registered under ``kind``.
+
+    Public accessor over the private ``_MUTATORS`` registry so callers
+    that dispatch on a specific kind (e.g. policy-guided search) don't
+    reach into module internals. Raises :class:`ValueError` for an
+    unknown kind, listing the valid ones.
+    """
+    try:
+        return _MUTATORS[kind]
+    except KeyError as exc:
+        valid = ", ".join(MUTATION_KINDS)
+        raise ValueError(f"unknown mutation kind {kind!r}; valid kinds: {valid}") from exc
+
+
 def mutate(
     expr: Expression,
     grammar: AlphaGrammar,
@@ -385,6 +404,7 @@ __all__ = [
     "MUTATION_KINDS",
     "change_window",
     "mutate",
+    "mutator_for_kind",
     "prune",
     "replace_var",
     "swap_operator",
