@@ -633,7 +633,9 @@ def test_specs_for_config_returns_default_specs_when_config_matches() -> None:
     ``FEATURE_SPECS`` tuple when the config matches the default —
     callers should get the exact same object identity, not a freshly-
     built copy."""
-    from quant_platform.research.features.learned.features import _specs_for_config
+    from quant_platform.services.research_service.features.kernel.learned.features import (
+        _specs_for_config,
+    )
 
     specs = _specs_for_config(DEFAULT_CONFIG)
     assert specs is FEATURE_SPECS
@@ -643,7 +645,9 @@ def test_specs_for_config_rebuilds_when_n_components_differs() -> None:
     """A non-default ``expected_n_components`` triggers a fresh spec
     rebuild with the new count. The rebuilt specs carry the
     config's version string and the new count of PC features."""
-    from quant_platform.research.features.learned.features import _specs_for_config
+    from quant_platform.services.research_service.features.kernel.learned.features import (
+        _specs_for_config,
+    )
 
     custom = LearnedConfig(
         version="learned-representations-experiment-1",

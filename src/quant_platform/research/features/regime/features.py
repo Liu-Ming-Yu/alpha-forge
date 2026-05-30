@@ -259,7 +259,15 @@ def _classify_per_date(
     # Each ``detector.step(stats, as_of)`` call runs the same
     # state-machine logic the live cycle uses, so the resulting label
     # sequence matches live execution date-for-date.
-    detector = MarketRegimeDetector(thresholds=DEFAULT_REGIME_THRESHOLDS)
+    #
+    # ``log_updates=False``: stepping the detector once per date across
+    # the whole universe history emits a ``regime_detector.updated``
+    # debug line per call, which would dominate the backtest log
+    # (~hundreds of thousands of lines for a universe-300 run). The
+    # offline feature path doesn't need the per-step signal; live/paper
+    # construction sites keep the default so live detection logging is
+    # untouched. State-machine semantics are identical regardless.
+    detector = MarketRegimeDetector(thresholds=DEFAULT_REGIME_THRESHOLDS, log_updates=False)
     records: list[dict[str, object]] = []
 
     for date in dates:

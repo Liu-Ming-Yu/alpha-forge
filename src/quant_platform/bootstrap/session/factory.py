@@ -250,7 +250,11 @@ def build_session(
         order_timeout_seconds=settings.execution.order_timeout_seconds,
     )
     order_type = OrderType.MOC if tactic_policy.close_auction_enabled else OrderType.LIMIT
-    order_planner = PortfolioTargetOrderPlanner(clock, order_type=order_type)
+    order_planner = PortfolioTargetOrderPlanner(
+        clock,
+        order_type=order_type,
+        rebalance_threshold=settings.execution.rebalance_threshold,
+    )
 
     return Session(
         settings=settings,

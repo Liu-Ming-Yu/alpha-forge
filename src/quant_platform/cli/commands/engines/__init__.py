@@ -16,7 +16,7 @@ def register(sub: Any) -> None:
     )
     eng_p.add_argument(
         "--engine",
-        choices=["cross_sectional_equity", "etf_macro_allocator"],
+        choices=["cross_sectional_equity", "etf_macro_allocator", "arm_g", "arm_q"],
         default="cross_sectional_equity",
         help="Engine to run. Default: cross_sectional_equity.",
     )

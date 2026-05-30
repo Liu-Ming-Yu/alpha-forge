@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -30,6 +30,7 @@ if TYPE_CHECKING:
     )
     from quant_platform.core.domain.instruments import Instrument
     from quant_platform.core.domain.market_data import MarketBar
+    from quant_platform.services.data_service.feeds.failover_bar_fetcher import BarFetcher
     from quant_platform.services.data_service.reference.universe_manager import UniverseManager
 
 log = structlog.get_logger(__name__)
@@ -61,9 +62,11 @@ class DataMaintenanceScheduler:
         universe_manager: UniverseManager,
         feature_repo: FeatureRepository,
         market_data_provider: MarketDataProvider | None = None,
+        bar_fetcher: BarFetcher | None = None,
         bar_seconds: int = 86400,
         lookback_days: int = 380,
         liquidity_lookback_days: int = 21,
+        ingest_lookback_days: int = 7,
         artifact_uri: str = "",
         feature_registry: FeatureFamilyRegistry | None = None,
     ) -> None:
@@ -72,9 +75,16 @@ class DataMaintenanceScheduler:
         self._universe_manager = universe_manager
         self._feature_repo = feature_repo
         self._market_data_provider = market_data_provider
+        # Optional vendor bar fetcher (Tiingo/Polygon). When set, the daily ingest
+        # pulls fresh EOD bars for stale names from the vendor — this is what keeps
+        # a multi-day paper soak current without a live IB feed. Opt-in: only
+        # non-None when QP__DATA_INGEST__BAR_FETCH_FALLBACK_CHAIN is configured, so
+        # IB-live and existing behavior are unchanged.
+        self._bar_fetcher = bar_fetcher
         self._bar_seconds = bar_seconds
         self._lookback_days = lookback_days
         self._liquidity_lookback_days = liquidity_lookback_days
+        self._ingest_lookback_days = ingest_lookback_days
         if artifact_uri:
             self._artifact_uri = artifact_uri
         else:
@@ -90,7 +100,7 @@ class DataMaintenanceScheduler:
         feature_set_version: str = DEFAULT_FEATURE_SET_VERSION,
     ) -> DataMaintenanceResult:
         result = DataMaintenanceResult()
-        result.bars_ingested = await self._ingest_latest_bars()
+        result.bars_ingested = await self._ingest_latest_bars(as_of)
         result.liquidity_profiles_updated = await refresh_liquidity_from_store(
             instruments=self._instruments,
             bar_store=self._bar_store,
@@ -180,7 +190,12 @@ class DataMaintenanceScheduler:
         emit_feature_distribution_metrics(feature_data, feature_set_version)
         return feature_data
 
-    async def _ingest_latest_bars(self) -> int:
+    async def _ingest_latest_bars(self, as_of: datetime) -> int:
+        # A configured vendor fetcher takes precedence (the opt-in daily-refresh
+        # path that keeps a paper soak current); otherwise the live market-data
+        # provider (IB) is used, preserving existing behavior.
+        if self._bar_fetcher is not None:
+            return await self._ingest_via_vendor(as_of)
         if self._market_data_provider is None:
             return 0
         bars = []
@@ -196,6 +211,53 @@ class DataMaintenanceScheduler:
             return 0
         await self._bar_store.store_bars(bars)
         return len(bars)
+
+    async def _ingest_via_vendor(self, as_of: datetime) -> int:
+        """Fetch recent EOD bars for stale names from the configured vendor.
+
+        Self-throttling: only instruments missing a bar on/after the previous
+        business day are fetched, so steady state pulls just the newest trading
+        day (and nothing once current). The vendor fetcher's own circuit breaker
+        bounds rate-limit pressure when many names are stale (e.g. first run after
+        a gap), and the bar store dedups, so re-fetch is harmless. Returns the
+        number of new bars written.
+        """
+        if self._bar_fetcher is None:  # pragma: no cover - guarded by caller
+            return 0
+        cutoff = self._previous_business_day(as_of.date())
+        cutoff_dt = datetime(cutoff.year, cutoff.month, cutoff.day, tzinfo=as_of.tzinfo)
+        stale: list[Instrument] = []
+        for inst in self._instruments:
+            recent = await self._bar_store.get_bars(
+                inst.instrument_id, self._bar_seconds, cutoff_dt, as_of
+            )
+            if not recent:
+                stale.append(inst)
+        if not stale:
+            return 0
+        start = (as_of - timedelta(days=self._ingest_lookback_days)).date()
+        try:
+            bars = await self._bar_fetcher(stale, start, as_of.date())
+        except Exception as exc:  # noqa: BLE001 - best-effort refresh, never crash the cycle
+            log.warning("data_maintenance.vendor_ingest_failed", error=str(exc), stale=len(stale))
+            return 0
+        if bars:
+            await self._bar_store.store_bars(bars)
+        log.info(
+            "data_maintenance.vendor_ingest",
+            stale=len(stale),
+            fetched=len(bars),
+            cutoff=str(cutoff),
+        )
+        return len(bars)
+
+    @staticmethod
+    def _previous_business_day(d: date) -> date:
+        """Most recent weekday strictly before ``d`` (ignores market holidays)."""
+        prev = d - timedelta(days=1)
+        while prev.weekday() >= 5:  # Saturday=5, Sunday=6
+            prev -= timedelta(days=1)
+        return prev
 
     async def _load_close_history(
         self,

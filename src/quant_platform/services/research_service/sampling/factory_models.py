@@ -55,8 +55,39 @@ class AlphaEligibilityThresholds:
     min_oos_rolling_ic: float = 0.05
     min_ic_60d: float = 0.03
     max_fold_negative_ic_streak: int = 2
+    #: Drawdown-conditioned streak relaxation (ADR-004 Option D). When set, a
+    #: streak above ``max_fold_negative_ic_streak`` (the strict floor) is
+    #: tolerated up to this cap **only if** the drawdown during the worst streak
+    #: stayed inside ``streak_containment_max_drawdown``; otherwise the strict
+    #: floor applies. When ``None`` (default) the streak gate is the plain
+    #: ``streak <= floor`` check and the ``max_drawdown_during_worst_streak``
+    #: metric is never read — so callers predating the field are unaffected.
+    #: Requires the metrics dict to carry ``max_drawdown_during_worst_streak``
+    #: whenever a streak exceeds the floor and this is non-``None``.
+    max_fold_negative_ic_streak_if_dd_contained: int | None = None
+    #: Within-worst-streak drawdown bound for the relaxation above. It must be
+    #: **tighter** than ``max_drawdown``: the within-streak drawdown is a subset
+    #: of the full-run drawdown, so reusing the full-run bound would make the
+    #: condition redundant (it could never independently fail). A tight bound
+    #: instead distinguishes "the construction absorbed the IC inversion" (small
+    #: within-streak DD — relaxation earned) from "the episode caused the loss"
+    #: (within-streak DD near the full bound — relaxation forfeit, even if the
+    #: full-run DD gate still passes). ``None`` falls back to ``max_drawdown``.
+    streak_containment_max_drawdown: float | None = None
     max_drawdown: float = -0.20
     min_slippage_adjusted_sharpe: float = 1.0
+    #: Minimum bootstrap 5th-percentile IC — the robustness gate that *replaces*
+    #: the brittle negative-IC-streak count for portfolio candidates (ADR-004
+    #: 2026-05-29). The held-out calibration proved the streak metric is not
+    #: OOS-stable (calibration-window streak 3 vs validation-window streak 7 on
+    #: the same arm), so a fixed streak cap cannot generalise. ``bootstrap_ic_p05``
+    #: — the 5th percentile of the block-bootstrapped fold-IC distribution —
+    #: tests the same concern ("is the predictive power *reliably* positive?")
+    #: with a statistically-grounded, regime-inclusive metric (the bootstrap
+    #: resamples span the crash episodes). ``> 0`` means "95% confident the IC is
+    #: positive". ``None`` (default) leaves the gate off, so callers/categories
+    #: predating the field are unaffected.
+    min_bootstrap_ic_p05: float | None = None
     #: Human-readable label for this threshold set. Serialised into the
     #: evidence JSON so a future auditor can identify "which named set
     #: was applied" without re-deriving it from the numeric values.
@@ -89,23 +120,40 @@ RESEARCH_RANKER_BASELINE_THRESHOLDS: AlphaEligibilityThresholds = AlphaEligibili
 
 #: Default thresholds for **portfolio_candidate** arms (long-only top-N
 #: with per-name + gross caps + monthly rebal). The construction absorbs
-#: negative-IC stretches without translating them into catastrophic
-#: P&L, so the streak gate widens from 2 to 4 folds (~84 trading days).
-#: In exchange, the drawdown gate tightens from -20% to -10%: if a
-#: tagged-candidate's construction misbehaves and DD blows past -10%,
-#: the looser streak gate doesn't help — the DD gate fails first.
-#: Together these encode "we trust the construction iff it actually
-#: protects you."
+#: negative-IC stretches without translating them into catastrophic P&L.
 #:
-#: This is the eligibility-threshold separation called out in
-#: ADR-003 ("per-category eligibility thresholds"); it lets governance
-#: distinguish "the alpha is dead" (baselines must clear) from
-#: "the alpha is noisy but the construction handles it" (candidates
-#: can clear).
+#: Streak gate redesign (ADR-004, 2026-05-29). History: ``streak <= 4`` (v1) →
+#: drawdown-conditioned ``floor 2 / cap 6`` (v2). After the dollar-volume scoring
+#: fix (ADR-011) the held-out calibration on corrected evidence was decisive:
+#: the negative-IC-streak metric is **not OOS-stable** — the *same arm* shows a
+#: calibration-window streak of 3 and a validation-window streak of 7 (the
+#: 2024-summer crash episode falls entirely out-of-sample), and the only
+#: cal==val-stable cap is 9 (≈ no gate). A run-length count therefore cannot be
+#: a principled discriminator on this universe/label.
+#:
+#: v3 replaces it with a **bootstrap-IC significance gate**: the streak count is
+#: demoted to a loose catastrophic backstop at the one OOS-stable value (``9``;
+#: it never binds for a sane arm), and the real robustness gate becomes
+#: ``min_bootstrap_ic_p05 > 0`` — the predictive power must be *statistically*
+#: positive (5th percentile of the block-bootstrapped fold-IC distribution above
+#: zero). That tests the same thing the streak gate intended ("is the alpha
+#: reliably positive across regimes?") but with a metric that is regime-inclusive
+#: by construction and does not depend on where an episode lands in the window.
+#: It is strict, not a rubber stamp: on the corrected A–N evidence it admits
+#: D (p05 +0.018) and N (+0.011) but rejects the GBDT-rank arm J (p05 −0.006)
+#: whose Sharpe-1.28 is driven by a single crash episode, not robust ranking.
+#:
+#: This is the eligibility-threshold separation called out in ADR-003; it lets
+#: governance distinguish "the alpha is dead" (baselines must clear) from "the
+#: alpha is reliably positive" (candidates can clear).
 PORTFOLIO_CANDIDATE_THRESHOLDS: AlphaEligibilityThresholds = AlphaEligibilityThresholds(
-    name="portfolio_candidate_v1",
-    max_fold_negative_ic_streak=4,
+    name="portfolio_candidate_v3",
+    # Loose catastrophic backstop at the only OOS-stable cap (held-out
+    # calibration); the binding robustness gate is min_bootstrap_ic_p05 below.
+    max_fold_negative_ic_streak=9,
     max_drawdown=-0.10,
+    # The redesigned robustness gate: IC must be statistically-positive (95%).
+    min_bootstrap_ic_p05=0.0,
 )
 
 

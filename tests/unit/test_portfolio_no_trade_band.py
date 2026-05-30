@@ -127,3 +127,45 @@ def test_no_trade_band_carries_sub_band_unselected_position() -> None:
 def test_negative_no_trade_band_raises() -> None:
     with pytest.raises(ValueError, match="no_trade_band must be >= 0"):
         LongOnlyPortfolioConstructor(top_n=10, no_trade_band=-0.01)
+
+
+# -- conviction weighting (Arm Q live deploy; ADR/construction-cost framework) ---
+
+
+def test_conviction_mode_tilts_toward_higher_scores() -> None:
+    """conviction_shrinkage set ⇒ the top-N are sized by conviction (highest
+    score gets the most weight), unlike the equal-weight default. The selection
+    is unchanged; only sizing differs. Weights stay long-only, within the
+    per-name cap, and inside the investable-gross budget."""
+    ids = [uuid.uuid4() for _ in range(5)]
+    scores = [0.75, 0.70, 0.66, 0.62, 0.60]
+    signals = [_signal(i, s) for i, s in zip(ids, scores, strict=True)]
+
+    conviction = LongOnlyPortfolioConstructor(top_n=5, conviction_shrinkage=0.25)
+    target = conviction.build_targets(signals, _regime(), _account(), _limits())
+
+    weights = target.weights
+    assert set(weights) == set(ids)  # selection unchanged — all five held
+    # Conviction tilt: strictly decreasing weight with decreasing score.
+    ordered = [float(weights[i]) for i in ids]
+    assert ordered == sorted(ordered, reverse=True)
+    assert ordered[0] > ordered[-1]
+    assert all(w > 0 for w in ordered)
+    # Long-only within budget: gross <= investable, each <= per-name cap.
+    limits = _limits()
+    investable = float(min(limits.max_gross_exposure, Decimal("1") - limits.min_cash_buffer))
+    regime_scale = 1.0  # RISK_ON
+    assert sum(ordered) <= investable * regime_scale + 1e-9
+    assert all(w <= float(limits.max_single_name_weight) + 1e-9 for w in ordered)
+
+
+def test_equal_weight_default_unchanged_by_conviction_param() -> None:
+    """conviction_shrinkage=None (default) ⇒ exact equal weight — behaviour
+    preserved for every existing strategy."""
+    ids = [uuid.uuid4() for _ in range(4)]
+    signals = [_signal(i, s) for i, s in zip(ids, [0.9, 0.7, 0.6, 0.55], strict=True)]
+    equal = LongOnlyPortfolioConstructor(top_n=4)  # default: no conviction
+    target = equal.build_targets(signals, _regime(), _account(), _limits())
+    vals = [float(w) for w in target.weights.values()]
+    assert vals  # non-empty
+    assert all(abs(v - vals[0]) < 1e-12 for v in vals)  # all identical (equal weight)

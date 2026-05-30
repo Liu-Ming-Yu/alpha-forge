@@ -9,6 +9,9 @@ x-quant-platform-env: &quant-platform-env
   QP__STORAGE__REDIS_URL: redis://redis:6379/0
   QP__STORAGE__EVENT_BUS_BACKEND: redis_streams
   QP__STORAGE__OBJECT_STORE_ROOT: /app/data/parquet
+  # Operator console SPA location inside the image (baked by the Dockerfile;
+  # restated here so it is explicit at the compose layer). See ADR-013.
+  QP__API__CONSOLE_DIST_DIR: /app/ui/dist
   QP__BROKER__HOST: ${QP__DOCKER_BROKER_HOST:-host.docker.internal}
   QP__BROKER__PORT: ${QP__DOCKER_BROKER_PORT:-7497}
   QP__BROKER__CLIENT_ID: ${QP__BROKER__CLIENT_ID:-985}
@@ -85,7 +88,11 @@ services:
       retries: 5
 
   quant-platform-api:
-    build: .
+    build:
+      context: .
+      args:
+        QP_GIT_COMMIT: ${QP_GIT_COMMIT:-unknown}
+        QP_BUILD_DATE: ${QP_BUILD_DATE:-unknown}
     restart: unless-stopped
     ports:
       - "8000:8000"

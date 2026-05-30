@@ -17,6 +17,7 @@ from quant_platform.services.governance_service.alpha.alpha_manifest_checks impo
 from quant_platform.services.governance_service.gates.signal_gate import signal_gate_status
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
     from datetime import datetime
 
     from quant_platform.config import PlatformSettings
@@ -167,6 +168,7 @@ async def alpha_promote(
     artifact_manifest: Path | None,
     rollback_target: str,
     as_of: datetime,
+    evidence_metadata: Mapping[str, object] | None = None,
     model_registry: ModelRegistryRepository | None = None,
     heartbeat_repository: OperationalReadinessRepository | None = None,
 ) -> dict[str, object]:
@@ -182,12 +184,19 @@ async def alpha_promote(
             "ramp_level": str(settings.alpha.live_ramp_initial),
         }
     }
+    registered_metadata: dict[str, object] = {**metadata, "engine_version": engine_version}
+    # Provenance from the research adapter (latest-stack evidence: the gate
+    # result + headline metrics that justified promotion) rides under a single
+    # ``evidence`` key so the registry record is self-describing. Optional — a
+    # manual promotion without backtest evidence omits it.
+    if evidence_metadata is not None:
+        registered_metadata["evidence"] = dict(evidence_metadata)
     model = await registry.register_model(
         strategy_name=signal_name,
         model_version=model_version,
         feature_set_version=feature_set_version,
         as_of=as_of,
-        metadata={**metadata, "engine_version": engine_version},
+        metadata=registered_metadata,
     )
     repository = heartbeat_repository or build_performance_repository(settings.storage.postgres_dsn)
     await repository.save_runtime_heartbeat(

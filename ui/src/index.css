@@ -1,0 +1,116 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================== *
+ *  Design tokens — Apple HIG-aligned. Dark is the default; the
+ *  `.light` class on <html> swaps the palette. Colors are stored
+ *  as space-separated RGB triplets so Tailwind's `/<alpha>` works.
+ * ============================================================== */
+:root,
+.dark {
+  --bg-base: 8 8 10;
+  --bg-surface: 22 22 26;
+  --bg-elevated: 32 32 38;
+  --bg-overlay: 18 18 22;
+  --hairline: 255 255 255;
+  --text-primary: 245 245 247;
+  --text-secondary: 161 161 170;
+  --text-tertiary: 113 113 122;
+  --accent: 10 132 255;
+  --accent-soft: 10 132 255;
+  --success: 48 209 88;
+  --warn: 255 159 10;
+  --danger: 255 69 58;
+  --glass-bg: 255 255 255;
+  --glass-alpha: 0.04;
+  --ambient-1: 10 132 255;
+  --ambient-2: 94 92 230;
+}
+
+.light {
+  --bg-base: 242 242 247;
+  --bg-surface: 255 255 255;
+  --bg-elevated: 255 255 255;
+  --bg-overlay: 255 255 255;
+  --hairline: 0 0 0;
+  --text-primary: 29 29 31;
+  --text-secondary: 99 99 105;
+  --text-tertiary: 142 142 147;
+  --accent: 0 122 255;
+  --accent-soft: 0 122 255;
+  --success: 52 199 89;
+  --warn: 255 149 0;
+  --danger: 255 59 48;
+  --glass-bg: 255 255 255;
+  --glass-alpha: 0.72;
+  --ambient-1: 0 122 255;
+  --ambient-2: 88 86 214;
+}
+
+@layer base {
+  * {
+    border-color: rgb(var(--hairline) / 0.08);
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-base text-ink font-sans antialiased;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    overscroll-behavior: none;
+  }
+  /* Quiet, native-feeling scrollbars */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgb(var(--hairline) / 0.16);
+    border-radius: 9999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgb(var(--hairline) / 0.28);
+    background-clip: content-box;
+  }
+  :focus-visible {
+    outline: 2px solid rgb(var(--accent) / 0.9);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+}
+
+@layer components {
+  /* Vibrancy surface — translucent + blurred, hairline edge */
+  .glass {
+    background: rgb(var(--glass-bg) / var(--glass-alpha));
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    backdrop-filter: saturate(180%) blur(20px);
+    border: 1px solid rgb(var(--hairline) / 0.08);
+  }
+  .card {
+    @apply rounded-xl2 bg-surface/80 border border-hairline/[0.07] shadow-card;
+  }
+  .tnum {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1, "cv01" 1;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

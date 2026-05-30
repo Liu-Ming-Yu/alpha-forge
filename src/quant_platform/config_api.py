@@ -31,6 +31,24 @@ class ApiSettings(BaseModel):
     rate_limit_per_minute: int = 120
     cors_allow_origins: str = ""
     expose_metrics: bool = False
+    console_dist_dir: str = ""
+    """Filesystem path to the built operator console SPA (``ui/dist``).
+
+    Empty (default) resolves to ``<repo_root>/ui/dist``.  Set
+    ``QP__API__CONSOLE_DIST_DIR`` to serve a console built elsewhere.  When the
+    directory is absent the API serves a friendly build-instructions page at
+    ``/app`` instead of failing — the JSON API is unaffected.
+    """
+    enable_command_execution: bool = False
+    """Allow the console to RUN CLI commands as subprocess jobs (default off).
+
+    The command *catalog* is always browsable, but ``POST /v1/commands/run`` is
+    refused unless this is true.  This is opt-in because it lets an
+    authenticated operator launch any ``python -m quant_platform`` command —
+    including live trading and migrations — from the browser.  Set
+    ``QP__API__ENABLE_COMMAND_EXECUTION=true`` to enable; dangerous commands
+    still require a typed confirmation.
+    """
 
     def assert_api_ready(self) -> None:
         """Raise ValueError if the API cannot start safely.

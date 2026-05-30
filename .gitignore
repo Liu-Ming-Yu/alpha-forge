@@ -34,6 +34,11 @@ apps/**/src-tauri/target/
 apps/**/src-tauri/gen/schemas/
 apps/operator-desktop/apps/
 
+# Operator console SPA (ui/, ADR-013) — build artifacts, not source
+ui/node_modules/
+ui/dist/
+ui/.vite/
+
 # Typecheck, lint, test, coverage
 .mypy_cache/
 .pytest_cache/

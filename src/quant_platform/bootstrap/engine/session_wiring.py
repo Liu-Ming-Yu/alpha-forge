@@ -114,11 +114,21 @@ def build_engine_maintenance_scheduler(
             max_bar_age_minutes=(settings.data_ingest.max_bar_age_minutes or None),
             daily_max_bar_age_minutes=(settings.data_ingest.daily_max_bar_age_minutes or None),
         )
+    # Opt-in vendor refresh: when a vendor chain is configured
+    # (QP__DATA_INGEST__BAR_FETCH_FALLBACK_CHAIN), the maintenance loop pulls fresh
+    # EOD bars for stale names each cycle — keeps a multi-day paper soak current
+    # with no live IB feed. None when unconfigured ⇒ existing IB/provider behavior.
+    from quant_platform.services.data_service.feeds.ingest_bar_fetcher_factory import (
+        build_vendor_bar_fetcher,
+    )
+
+    bar_fetcher = build_vendor_bar_fetcher(settings, bar_seconds=86400)
     return DataMaintenanceScheduler(
         instruments=session.contract_master.list_active(),
         bar_store=session.bar_store,
         universe_manager=session.universe_manager,
         feature_repo=session.feature_repo,
         market_data_provider=market_data_provider,
+        bar_fetcher=bar_fetcher,
         feature_registry=build_feature_registry(session.feature_repo),
     )

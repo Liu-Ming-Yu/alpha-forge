@@ -148,12 +148,18 @@ def create_app(
 
     from quant_platform.views.operator_api.routers import (
         OperatorApiRouteContext,
+        register_backtest_routes,
+        register_broker_routes,
         register_cash_orders_audit_routes,
+        register_command_routes,
+        register_console_config_routes,
+        register_dashboard_data_routes,
         register_dashboard_routes,
         register_health_routes,
         register_research_evidence_routes,
         register_strategy_state_routes,
     )
+    from quant_platform.views.operator_api.static import mount_operator_console
 
     protected_dependencies: list[Any] = []
     route_context = OperatorApiRouteContext(
@@ -176,6 +182,14 @@ def create_app(
     register_strategy_state_routes(app, route_context)
     register_research_evidence_routes(app, route_context)
     register_dashboard_routes(app, route_context)
+    register_console_config_routes(app, route_context)
+    register_command_routes(app, route_context)
+    register_backtest_routes(app, route_context)
+    register_broker_routes(app, route_context)
+    register_dashboard_data_routes(app, route_context)
+
+    # Serve the built console SPA last so any JSON API path always wins.
+    mount_operator_console(app, settings)
 
     return app
 

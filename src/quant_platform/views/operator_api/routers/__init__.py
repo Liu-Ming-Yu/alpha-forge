@@ -7,11 +7,20 @@ operator surfaces.
 
 from __future__ import annotations
 
+from quant_platform.views.operator_api.routers.backtest import register_backtest_routes
+from quant_platform.views.operator_api.routers.broker import register_broker_routes
 from quant_platform.views.operator_api.routers.cash_orders_audit import (
     register_cash_orders_audit_routes,
 )
+from quant_platform.views.operator_api.routers.commands import register_command_routes
+from quant_platform.views.operator_api.routers.console_config import (
+    register_console_config_routes,
+)
 from quant_platform.views.operator_api.routers.context import OperatorApiRouteContext
 from quant_platform.views.operator_api.routers.dashboard import register_dashboard_routes
+from quant_platform.views.operator_api.routers.dashboards import (
+    register_dashboard_data_routes,
+)
 from quant_platform.views.operator_api.routers.health import register_health_routes
 from quant_platform.views.operator_api.routers.research_evidence import (
     register_research_evidence_routes,
@@ -22,7 +31,12 @@ from quant_platform.views.operator_api.routers.strategy_state import (
 
 __all__ = [
     "OperatorApiRouteContext",
+    "register_backtest_routes",
+    "register_broker_routes",
     "register_cash_orders_audit_routes",
+    "register_command_routes",
+    "register_console_config_routes",
+    "register_dashboard_data_routes",
     "register_dashboard_routes",
     "register_health_routes",
     "register_research_evidence_routes",

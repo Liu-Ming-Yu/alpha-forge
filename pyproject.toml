@@ -31,6 +31,7 @@ dependencies = [
     "prometheus-client>=0.20,<1",
     # Utilities
     "tenacity>=8.2,<10",
+    "psutil>=5.9,<8",
     "python-dateutil>=2.9,<3",
     "exchange-calendars>=4.5,<5",
     "httpx>=0.27,<0.28",
@@ -59,6 +60,16 @@ backtest = ["vectorbt>=0.25"]
 # so a deployment that doesn't use Arms C/D/E (latest-stack) or any
 # downstream learned-feature path can skip this extra.
 ml = ["xgboost>=3,<4", "scikit-learn>=1.4,<3"]
+
+# PyTorch powers the GRU sequence ranker (``campaigns/models/sequence.py``,
+# Arm N of the latest-stack backtest). The model lazy-imports torch and raises
+# a helpful ImportError when missing, so any deployment not running Arm N can
+# skip this extra. NOTE: PyPI provides only the CPU wheel; GPU on Windows needs
+# the dedicated PyTorch CUDA index, e.g. for Blackwell (RTX 50xx):
+#   pip install torch --index-url https://download.pytorch.org/whl/cu128
+# This is a documented manual step (same spirit as the broker/ibapi extra); the
+# pin here only guarantees the CPU build resolves from PyPI.
+dl = ["torch>=2.2,<3"]
 
 observability = ["sentry-sdk>=2,<3"]
 

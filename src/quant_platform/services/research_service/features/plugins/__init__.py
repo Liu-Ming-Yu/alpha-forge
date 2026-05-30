@@ -49,6 +49,13 @@ from quant_platform.services.research_service.features.pipeline.feature_pipeline
 from quant_platform.services.research_service.features.pipeline.storage import (
     feature_result_from_bundle,
 )
+from quant_platform.services.research_service.features.pv_formulaic.compute import (
+    PV_FORMULAIC_FEATURE_NAMES,
+)
+from quant_platform.services.research_service.features.pv_formulaic.family import (
+    PV_FORMULAIC_FEATURE_SET_VERSION,
+    build_pv_formulaic_feature_bundle,
+)
 
 if TYPE_CHECKING:
     import uuid
@@ -74,6 +81,7 @@ CLOSE_FAMILY = "close"
 CATALYST_FAMILY = "catalyst"
 EVENT_FAMILY = "event"
 COMPOSITE_FAMILY = "composite"
+PV_FORMULAIC_FAMILY = "pv_formulaic"
 
 _CLOSE_OUTPUT_FEATURES = tuple(spec.name for spec in STANDARD_FACTOR_SPECS if spec.is_alpha)
 
@@ -197,6 +205,10 @@ def build_research_feature_family_plugins(
             _bars(payloads), source_feature_repo=feature_repo, as_of=as_of
         )
 
+    async def _build_pv_formulaic(payloads: Mapping[str, object], as_of: datetime) -> FeatureBundle:
+        # Synchronous kernel compute; wrapped to satisfy the async builder shape.
+        return build_pv_formulaic_feature_bundle(_bars(payloads), as_of=as_of)
+
     return (
         _plugin(
             family=CLOSE_FAMILY,
@@ -228,6 +240,13 @@ def build_research_feature_family_plugins(
             output_features=(),
             builder=_build_composite,
         ),
+        _plugin(
+            family=PV_FORMULAIC_FAMILY,
+            version=PV_FORMULAIC_FEATURE_SET_VERSION,
+            required_input=BARS_EOD_INPUT,
+            output_features=PV_FORMULAIC_FEATURE_NAMES,
+            builder=_build_pv_formulaic,
+        ),
     )
 
 
@@ -236,6 +255,7 @@ __all__ = [
     "CLOSE_FAMILY",
     "COMPOSITE_FAMILY",
     "EVENT_FAMILY",
+    "PV_FORMULAIC_FAMILY",
     "BundleFeatureComputer",
     "BundleFeatureFamilyPlugin",
     "build_research_feature_family_plugins",
