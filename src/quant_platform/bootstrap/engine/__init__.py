@@ -69,19 +69,53 @@ async def supervise_engine(
         raise ValueError(
             "supervise does not support live mode; use bounded run-engine/V2 live flow"
         )
-    return await run_engine_loop(
-        settings,
-        EngineLoopConfig(
-            engine_name=engine_name,
-            mode=mode,
-            execution_backend=execution_backend,
-            initial_cash=initial_cash,
-            contracts_file=contracts_file,
-            interval_seconds=interval_seconds,
-            max_cycles=max_cycles,
-            install_signal_handlers=True,
-        ),
+    config = EngineLoopConfig(
+        engine_name=engine_name,
+        mode=mode,
+        execution_backend=execution_backend,
+        initial_cash=initial_cash,
+        contracts_file=contracts_file,
+        interval_seconds=interval_seconds,
+        max_cycles=max_cycles,
+        install_signal_handlers=True,
     )
+    # ADR-014: when the account orchestrator is enabled, single-engine supervise
+    # runs as the N=1 case of the multi-engine path so the operator console
+    # (strategy runs, budgets, contributions) is populated. The robust loop
+    # (kill-switch, recovery, interval, signals) is reused either way.
+    runner_factory = (
+        _account_orchestrator_runner_factory(settings, config)
+        if settings.v2.enabled and settings.v2.account_orchestrator_enabled
+        else None
+    )
+    return await run_engine_loop(settings, config, runner_factory=runner_factory)
+
+
+def _account_orchestrator_runner_factory(
+    settings: PlatformSettings,
+    config: EngineLoopConfig,
+) -> Any:
+    """Build a zero-arg factory for an orchestrator-backed single-engine runner."""
+    from quant_platform.application.operator.cli_inputs import load_instrument_contracts
+    from quant_platform.bootstrap.engine.multi import resolve_engine_budgets
+    from quant_platform.bootstrap.engine.orchestrator_runner import AccountOrchestratorLoopRunner
+
+    contracts = load_instrument_contracts(config.contracts_file) if config.contracts_file else {}
+    budgets = resolve_engine_budgets(
+        budgets_file=None, engine_names=[config.engine_name], mode=config.mode
+    )
+
+    def _factory() -> AccountOrchestratorLoopRunner:
+        return AccountOrchestratorLoopRunner(
+            settings,
+            engine_names=[config.engine_name],
+            budgets=budgets,
+            mode=config.mode,
+            initial_cash=config.initial_cash,
+            instrument_contracts=contracts,
+        )
+
+    return _factory
 
 
 def _make_strategy_run(settings: PlatformSettings) -> StrategyRun:

@@ -1,46 +1,75 @@
 <div align="center">
 
 <p>
-  <strong>Language</strong><br>
   <kbd>English · Current</kbd>
   <a href="README.zh-CN.md"><kbd>简体中文</kbd></a>
 </p>
 
+<br>
+
 # Alpha Forge
 
-### Introducing Alpha Forge &mdash; an agentic AI operating system for systematic trading.
-
 <p>
-  Built for a world where markets move through price, language, liquidity,
-  positioning, macro pressure, and machine-readable narrative, Alpha Forge
-  unifies research, LLM intelligence, machine learning, governance, and execution
-  into one production architecture that works with IBKR.
+  <strong>Agentic AI infrastructure for systematic trading.</strong>
 </p>
 
 <p>
-  It turns filings, earnings calls, news, market data, microstructure,
-  ownership, estimates, options, and macro signals into governed alpha
-  candidates. Then it tests them, challenges them, versions them, audits them,
-  and blocks them until evidence is strong enough.
+  Alpha Forge brings LLM-native research, representation learning, portfolio
+  governance, and IBKR-ready execution into one quiet, auditable operator
+  system.
 </p>
 
 <p>
-  <sub>Agentic LLM Intelligence / Representation Learning / Autonomous Research / Governed Execution</sub>
-</p>
-
-<p>
-  <a href="https://www.interactivebrokers.com/en/trading/ib-api.php?menu=A" aria-label="Open the official Interactive Brokers API page">
-    <img src="docs/assets/ibkr-integration-badge.svg" alt="IBKR-ready execution: TWS API, IB Gateway, and governed paper-to-live pathway" width="520">
+  <a href="https://github.com/Liu-Ming-Yu/alpha-forge/stargazers">
+    <img alt="GitHub stars" src="https://img.shields.io/github/stars/Liu-Ming-Yu/alpha-forge?style=flat&amp;logo=github&amp;label=Stars&amp;labelColor=0b0b0f&amp;color=111827">
+  </a>
+  <a href="https://github.com/Liu-Ming-Yu/alpha-forge/network/members">
+    <img alt="GitHub forks" src="https://img.shields.io/github/forks/Liu-Ming-Yu/alpha-forge?style=flat&amp;logo=github&amp;label=Forks&amp;labelColor=0b0b0f&amp;color=111827">
+  </a>
+  <a href="https://github.com/Liu-Ming-Yu/alpha-forge/issues">
+    <img alt="GitHub issues" src="https://img.shields.io/github/issues/Liu-Ming-Yu/alpha-forge?style=flat&amp;logo=github&amp;label=Issues&amp;labelColor=0b0b0f&amp;color=111827">
+  </a>
+  <a href="https://github.com/Liu-Ming-Yu/alpha-forge/commits/main">
+    <img alt="GitHub last commit" src="https://img.shields.io/github/last-commit/Liu-Ming-Yu/alpha-forge?style=flat&amp;logo=github&amp;label=Last%20commit&amp;labelColor=0b0b0f&amp;color=111827">
+  </a>
+  <a href="LICENSE">
+    <img alt="GitHub license" src="https://img.shields.io/github/license/Liu-Ming-Yu/alpha-forge?style=flat&amp;label=License&amp;labelColor=0b0b0f&amp;color=111827">
   </a>
 </p>
 
 <p>
+  <img alt="Python 3.11" src="https://img.shields.io/badge/Python-3.11-111827?style=flat&amp;logo=python&amp;logoColor=white&amp;labelColor=0b0b0f">
+  <img alt="Docker ready" src="https://img.shields.io/badge/Docker-ready-111827?style=flat&amp;logo=docker&amp;logoColor=white&amp;labelColor=0b0b0f">
+  <img alt="IBKR ready" src="https://img.shields.io/badge/IBKR-ready-111827?style=flat&amp;labelColor=0b0b0f">
+  <img alt="FastAPI operator API" src="https://img.shields.io/badge/FastAPI-operator%20API-111827?style=flat&amp;logo=fastapi&amp;logoColor=white&amp;labelColor=0b0b0f">
+</p>
+
+<p>
+  <sub>Agentic LLM intelligence / representation learning / autonomous research / governed execution</sub>
+</p>
+
+<p>
+  <a href="#demo"><kbd>Demo</kbd></a>
   <a href="#command-deck"><kbd>Command Deck</kbd></a>
   <a href="#architecture-map"><kbd>Architecture Map</kbd></a>
   <a href="#agentic-llm-intelligence-layer"><kbd>LLM Layer</kbd></a>
   <a href="#autonomous-research-factory"><kbd>Research Factory</kbd></a>
   <a href="#production-execution-fortress"><kbd>Execution</kbd></a>
 </p>
+
+</div>
+
+---
+
+## Demo
+
+<div align="center">
+
+<img src="docs/assets/alpha-forge-console-demo.gif" alt="Alpha Forge operator console demo showing live NAV, broker status, readiness, and strategy controls" width="100%">
+
+<br>
+
+<sub>Live operator console for NAV, broker health, regime state, strategy readiness, and execution controls.</sub>
 
 </div>
 
@@ -434,6 +463,29 @@ python -m quant_platform --help
 
 Use Python 3.11 for project verification.
 
+### Quick start (recommended)
+
+One command creates the venv, installs dependencies, installs `ibapi` (the IBKR
+TWS API -- not on PyPI, auto-downloaded from IBKR), and seeds `.env` from the
+example:
+
+```powershell
+pwsh scripts/setup.ps1            # add -Extras for the ml + backtest research extras
+```
+
+On macOS/Linux/WSL:
+
+```bash
+bash scripts/setup.sh             # add --extras for ml + backtest
+```
+
+Then edit `.env` (set `POSTGRES_PASSWORD`, `QP__API__OPERATOR_API_KEY`, and
+your vendor/broker keys) and start the platform -- the broker-capable API
+natively (`scripts/serve_api_native.ps1`) or the full Docker stack
+(`scripts/deploy.ps1`). The manual equivalents of each step follow.
+
+### Manual setup
+
 ```bash
 python -m venv .venv
 .venv\Scripts\activate
@@ -457,8 +509,76 @@ python -m pip install -e ".[ml]"       # XGBoost research
 python -m pip install -e ".[backtest]" # vectorbt backtests
 ```
 
-`ibapi` is not a default dependency. Install it from the IBKR TWS API
-distribution when using real IBKR paper/live paths.
+`ibapi` (the IBKR TWS API) is not on PyPI, so no pip extra can provide it.
+`scripts/setup.ps1` installs it automatically; to (re)install it on its own:
+
+```bash
+pwsh scripts/install_ibapi.ps1            # pinned to API 10.46.1; -Version <ver> to override
+bash scripts/install_ibapi.sh             # IBAPI_VERSION=<ver> to override
+```
+
+IBKR rotates hosted builds. If the pinned download 404s, pass a current version
+from <https://interactivebrokers.github.io/> (for example `-Version 1047.01`).
+
+Optional GPU acceleration for the learned-representations and sequence-ranker
+paths installs torch via the `[dl]` extra. PyPI ships CPU-only wheels; install a
+CUDA build matching your GPU afterward (example: CUDA 12.8 / cu128):
+
+```bash
+python -m pip install -e ".[dl]"
+python -m pip install torch --index-url https://download.pytorch.org/whl/cu128
+```
+
+GPU is optional. Torch-dependent tests skip automatically when CUDA is absent.
+
+## Run With Docker
+
+Durable paper/live state lives in Postgres and Redis, which run as Docker
+services. For a full stack in one command (build the image, start Postgres and
+Redis, apply migrations, serve the operator API and console) use the deploy
+script. It generates any missing secrets into `.env` on first run:
+
+```powershell
+pwsh scripts/deploy.ps1            # add -Workers for the maintenance worker, -Paper for the paper engine, -Rebuild to force a rebuild
+```
+
+On macOS/Linux/WSL:
+
+```bash
+bash scripts/deploy.sh
+```
+
+To run the platform natively (in your venv) but keep state durable, start only
+the backing services and point `.env` at them. `POSTGRES_PASSWORD` must be set in
+`.env` first because compose reads it:
+
+```bash
+docker compose up -d postgres redis
+```
+
+## Live IBKR Broker (Native API)
+
+The Docker image deliberately omits `ibapi`, so the containerized API cannot
+reach IBKR. To pull live positions/NAV, run the operator API in your venv (where
+`ibapi` is installed) on `127.0.0.1` -- which the TWS API trusts by default,
+unlike a container's bridge address -- against the Dockerized Postgres + Redis:
+
+```bash
+pwsh scripts/serve_api_native.ps1
+bash scripts/serve_api_native.sh
+```
+
+This ensures `ibapi` is present, starts Postgres + Redis, stops the Dockerized
+API to free the port, then serves natively. TWS or IB Gateway must be running
+and reachable per the `.env` `QP__BROKER__*` settings (paper TWS = `7497`).
+
+The script also exports `QP__LIVE_IBKR__CONTRACTS_FILE` from `.env` into the
+process environment so broker-sync can map account positions (it reads that var
+from `os.environ` directly, not pydantic settings) -- point it at your traded
+universe, e.g. `infra/config/universe_300.json`, or the console shows 0
+positions. On startup the operator API hydrates cash/NAV from the latest
+persisted broker snapshot, so the console reflects the real account rather than
+the synthetic `--initial-cash` ledger.
 
 ## Configuration
 
@@ -487,6 +607,16 @@ QP__STORAGE__POSTGRES_DSN=postgresql+psycopg://user:pass@host:5432/quant_platfor
 QP__STORAGE__REDIS_URL=redis://localhost:6379/0
 QP__STORAGE__EVENT_BUS_BACKEND=redis_streams
 QP__API__OPERATOR_API_KEY=<strong random key>
+```
+
+The operator console Strategy screen (strategy runs, engine budgets, source
+contributions) is populated by the V2 unified runtime. Enable it so
+single-engine supervise runs as the N=1 multi-engine case and writes those rows
+(ADR-014); also required by `run-multi-engine`:
+
+```bash
+QP__V2__ENABLED=true
+QP__V2__ACCOUNT_ORCHESTRATOR_ENABLED=true
 ```
 
 Common IBKR ports:

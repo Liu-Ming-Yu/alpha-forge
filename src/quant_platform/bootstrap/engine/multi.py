@@ -2,24 +2,19 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
-import uuid
 from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import structlog
 
-from quant_platform.bootstrap.engine.session_wiring import (
-    build_engine_maintenance_scheduler,
-    create_engine_runtime_session,
-)
 from quant_platform.bootstrap.persistence.migrations import verify_postgres_schema
-from quant_platform.bootstrap.session.public_api import create_live_session, create_paper_session
 from quant_platform.engines.market_data.price_seeding import latest_contract_market_prices
 
 if TYPE_CHECKING:
+    import uuid
+
     from quant_platform.config import PlatformSettings
     from quant_platform.engines.engine_runner import EngineRunner
 
@@ -59,18 +54,14 @@ async def run_multi_engine_v2(
     initial_cash: Decimal = Decimal("50000"),
     instrument_contracts: dict[uuid.UUID, dict[str, object]] | None = None,
 ) -> None:
-    """Run a V2 multi-engine cycle: proposal engines, orchestrator, submission."""
-    from quant_platform.engines.account.orchestrator import AccountExecutionOrchestrator
-    from quant_platform.engines.engine_runner import EngineRunner, RunMode
-    from quant_platform.engines.framework.plugins import create_engine_from_plugin
-    from quant_platform.engines.multi_engine import MultiEngineRunner
-    from quant_platform.infrastructure.repositories.multi_engine_governance import (
-        build_multi_engine_governance_repository,
-    )
-    from quant_platform.infrastructure.support.clock import WallClock
-    from quant_platform.infrastructure.v2.postgres import build_v2_repository_bundle
-    from quant_platform.services.execution_service.orders.router import DefaultExecutionRouter
-    from quant_platform.services.portfolio_service.optimizer import ConstraintAwareOptimizer
+    """Run bounded V2 account-orchestrator cycles over one shared runner.
+
+    Single-engine and multi-engine differ only by ``engine_names``/``budgets``;
+    the per-cycle execution lives in ``AccountOrchestratorLoopRunner`` so this
+    bounded path and ``supervise`` (via ``run_engine_loop``) never diverge.
+    """
+    from quant_platform.bootstrap.engine.orchestrator_runner import AccountOrchestratorLoopRunner
+    from quant_platform.engines.engine_runner import RunMode
 
     if not (settings.v2.enabled and settings.v2.account_orchestrator_enabled):
         raise RuntimeError(
@@ -80,143 +71,52 @@ async def run_multi_engine_v2(
 
     await verify_postgres_schema(settings)
 
-    run_mode = RunMode(mode)
-    budgets = _resolve_budgets(
-        budgets_file=budgets_file,
-        engine_names=engine_names,
-        mode=mode,
+    budgets = resolve_engine_budgets(
+        budgets_file=budgets_file, engine_names=engine_names, mode=mode
     )
     contracts = dict(instrument_contracts or {})
-    if run_mode == RunMode.LIVE and not contracts:
+    if RunMode(mode) == RunMode.LIVE and not contracts:
         raise ValueError("LIVE mode requires --contracts-file")
 
-    proposal_engines = [
-        create_engine_from_plugin(
-            name,
-            run_mode=RunMode.PAPER,
-            initial_cash=initial_cash,
-            settings=settings,
-            instrument_contracts=contracts,
-        )
-        for name in engine_names
-    ]
-    await asyncio.gather(
-        *[
-            engine.initialize(
-                session_factory=create_engine_runtime_session,
-                scheduler_factory=build_engine_maintenance_scheduler,
-            )
-            for engine in proposal_engines
-        ]
-    )
-
-    if run_mode == RunMode.LIVE:
-        snapshot = await EngineRunner(
-            next(iter(proposal_engines))._config, settings
-        )._bootstrap_live_snapshot(contracts)
-        exec_session = create_live_session(
-            settings=settings,
-            initial_snapshot=snapshot,
-            instrument_contracts=contracts,
-        )
-    else:
-        exec_session = create_paper_session(
-            settings=settings,
-            initial_cash=initial_cash,
-            instrument_contracts=contracts or None,
-        )
-
-    v2_bundle = build_v2_repository_bundle(settings)
-    governance_repo = build_multi_engine_governance_repository(settings.storage.postgres_dsn)
-    multi_engine = MultiEngineRunner(
-        settings=settings,
+    runner = AccountOrchestratorLoopRunner(
+        settings,
+        engine_names=engine_names,
         budgets=budgets,
-        governance_repo=governance_repo,
+        mode=mode,
+        initial_cash=initial_cash,
+        instrument_contracts=contracts,
     )
-    await multi_engine.persist_budgets()
-
-    clock = WallClock()
-    order_planner = exec_session.order_planner
-    if order_planner is None:
-        raise RuntimeError("multi-engine execution session is missing order planner")
-    orchestrator = AccountExecutionOrchestrator(
-        multi_engine=multi_engine,
-        optimizer=ConstraintAwareOptimizer(),
-        order_planner=order_planner,
-        approve_ctrl=exec_session.approve_ctrl,
-        submit_ctrl=exec_session.submit_ctrl,
-        order_state=v2_bundle.order_state,
-        execution_router=DefaultExecutionRouter(
-            policy=exec_session.execution_tactic_policy,
-            broker=exec_session.trading_broker,
-        ),
-        risk_repo=v2_bundle.risk_models,
-        governance_repo=governance_repo,
-    )
-
-    for cycle_i in range(cycles):
-        account = await exec_session.account_broker.sync_account()
-        market_prices = {
-            position.instrument_id: position.market_price for position in account.positions
-        }
-        market_prices.update(
-            await latest_contract_market_prices(
-                exec_session=exec_session,
-                instrument_contracts=contracts,
-                existing=market_prices,
-                as_of=clock.now(),
+    await runner.initialize()
+    try:
+        for cycle_i in range(cycles):
+            result = await runner.run_cycle(feature_data={})
+            log.info(
+                "multi_engine.cycle",
+                cycle=cycle_i + 1,
+                submitted=len(result.submitted_ids),
+                approved=len(result.approved),
+                rejected=len(result.rejected),
             )
-        )
-        risk_model = (
-            await v2_bundle.risk_models.latest_risk_model(as_of=clock.now())
-            if hasattr(v2_bundle.risk_models, "latest_risk_model")
-            else None
-        )
-        proposals = await asyncio.gather(
-            *[engine.generate_proposal(market_prices=market_prices) for engine in proposal_engines]
-        )
-
-        if risk_model is None:
-            from quant_platform.core.domain.portfolio import PortfolioRiskModel
-
-            risk_model = PortfolioRiskModel(
-                model_id=uuid.uuid4(),
-                as_of=clock.now(),
-                covariance={},
-                factor_exposures={},
-                scenarios=(),
-            )
-
-        strategy_run = proposal_engines[0]._strategy_run
-        if strategy_run is None:
-            raise RuntimeError("proposal engine strategy run is not initialized")
-        result = await orchestrator.execute(
-            proposals=tuple(proposals),
-            account=account,
-            limits=exec_session.risk_limits,
-            risk_model=risk_model,
-            market_prices=market_prices,
-            strategy_run_id=strategy_run.run_id,
-            as_of=clock.now(),
-        )
-        log.info(
-            "multi_engine.cycle",
-            cycle=cycle_i + 1,
-            submitted=len(result.submitted_ids),
-            approved=len(result.approved),
-            rejected=len(result.rejected),
-        )
-
-    summaries = await asyncio.gather(*[engine.shutdown() for engine in proposal_engines])
-    for summary in summaries:
-        log.info(
-            "multi_engine.engine_complete",
-            engine=summary.engine_name,
-            cycles=summary.cycles_completed,
-        )
+    finally:
+        await runner.shutdown()
 
 
-def _resolve_budgets(
+def _canonical_engine_name(name: str) -> str:
+    """Resolve a plugin CLI key (e.g. ``cross_sectional_equity``) to the canonical
+    engine name carried by proposals (e.g. ``cross_sectional_equity_v1``).
+
+    Budgets must be keyed by the canonical name so the proposal/budget merge
+    lookup lines up; falls back to ``name`` for non-plugin engines.
+    """
+    from quant_platform.engines.framework.plugins import get_strategy_plugin
+
+    try:
+        return get_strategy_plugin(name).name
+    except ValueError:
+        return name
+
+
+def resolve_engine_budgets(
     *,
     budgets_file: str | None,
     engine_names: list[str],
@@ -233,11 +133,11 @@ def _resolve_budgets(
 
     return (
         EngineBudget(
-            engine_name=engine_names[0],
+            engine_name=_canonical_engine_name(engine_names[0]),
             engine_version="0.1.0",
             run_mode=mode,
             capital_weight=Decimal("1.0"),
-            max_gross=Decimal("1.5"),
+            max_gross=Decimal("1.0"),
             max_turnover=Decimal("1.0"),
             enabled=True,
         ),
@@ -261,7 +161,7 @@ def load_budgets(
             raise ValueError(f"No budget entry for engine '{name}' in {budgets_file}")
         budgets.append(
             EngineBudget(
-                engine_name=name,
+                engine_name=_canonical_engine_name(name),
                 engine_version=spec.get("engine_version", "0.1.0"),
                 capital_weight=Decimal(str(spec["capital_weight"])),
                 max_gross=Decimal(str(spec["max_gross"])),

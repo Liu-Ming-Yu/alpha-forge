@@ -20,6 +20,8 @@ from quant_platform.core.domain.production import (
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncEngine
 
+    from quant_platform.core.domain.research.runs import StrategyRun
+
 
 class InMemoryMultiEngineGovernanceRepository:
     """In-memory governance repository for tests and local shadow runs."""
@@ -28,6 +30,7 @@ class InMemoryMultiEngineGovernanceRepository:
         self._budgets: dict[str, EngineBudget] = {}
         self._targets: dict[uuid.UUID, CombinedPortfolioTarget] = {}
         self._allocations: dict[uuid.UUID, list[OrderAllocation]] = {}
+        self._strategy_runs: dict[uuid.UUID, StrategyRun] = {}
 
     async def save_engine_budget(self, budget: EngineBudget) -> None:
         self._budgets[budget.engine_name] = budget
@@ -37,6 +40,9 @@ class InMemoryMultiEngineGovernanceRepository:
 
     async def save_combined_target(self, target: CombinedPortfolioTarget) -> None:
         self._targets[target.target_id] = target
+
+    async def save_strategy_run(self, run: StrategyRun) -> None:
+        self._strategy_runs[run.run_id] = run
 
     async def list_target_contributions(
         self,
@@ -155,6 +161,35 @@ class PostgresMultiEngineGovernanceRepository:
                         "capital_weight": contribution.capital_weight,
                     },
                 )
+
+    async def save_strategy_run(self, run: StrategyRun) -> None:
+        async with self._engine.begin() as conn:
+            await conn.execute(
+                text("""
+                    INSERT INTO strategy_runs
+                        (run_id, strategy_name, strategy_version, run_type, status,
+                         config_snapshot, created_at, started_at, finished_at)
+                    VALUES
+                        (:run_id, :strategy_name, :strategy_version, :run_type, :status,
+                         CAST(:config_snapshot AS JSONB), :created_at, :started_at,
+                         :finished_at)
+                    ON CONFLICT (run_id) DO UPDATE SET
+                        status = EXCLUDED.status,
+                        started_at = EXCLUDED.started_at,
+                        finished_at = EXCLUDED.finished_at
+                """),
+                {
+                    "run_id": run.run_id,
+                    "strategy_name": run.strategy_name,
+                    "strategy_version": run.strategy_version,
+                    "run_type": str(run.run_type),
+                    "status": str(run.status),
+                    "config_snapshot": json.dumps(dict(run.config_snapshot), default=str),
+                    "created_at": run.created_at,
+                    "started_at": run.started_at,
+                    "finished_at": run.finished_at,
+                },
+            )
 
     async def list_target_contributions(
         self,

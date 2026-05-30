@@ -27,6 +27,9 @@ runbooks for `quant-platform`.
   prompts for production-hardening work.
 - [V2 execution flow](architecture/v2-execution-flow.md): multi-engine account
   orchestration path.
+- [ADR-014 — Unified engine runtime](architecture/adr-014-unified-engine-runtime.md):
+  single-engine `supervise` runs as the N=1 case of the multi-engine
+  orchestrator so the operator console reflects whatever runs.
 - [Core contracts](interfaces/core-contracts.md): contract groups and invariant
   expectations.
 

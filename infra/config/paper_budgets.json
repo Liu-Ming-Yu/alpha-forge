@@ -1,0 +1,8 @@
+{
+  "cross_sectional_equity": {
+    "capital_weight": 1.0,
+    "max_gross": 0.6,
+    "max_turnover": 0.5,
+    "run_mode": "paper"
+  }
+}

@@ -19,6 +19,37 @@ The platform supports shadow runs, simulated paper runs, IBKR paper runs, and
 guarded live sessions. It also has governed XGBoost/text research paths and a
 V2 shared-account orchestrator for multi-engine execution.
 
+## Deploy (one command)
+
+To stand up the **entire** stack — Postgres, Redis, and the operator API
+serving both the JSON API and the built browser console — in one command:
+
+```powershell
+# Windows
+pwsh scripts/deploy.ps1
+```
+
+```bash
+# Linux / macOS / CI
+make deploy            # or: bash scripts/deploy.sh
+```
+
+It builds the Docker image (backend + frontend in one multi-stage build),
+generates `POSTGRES_PASSWORD` and `QP__API__OPERATOR_API_KEY` in `.env` if they
+are missing (existing values are never overwritten), applies database
+migrations, brings the stack up, waits for health, and prints the console URL
+and API key. No host Node or Python toolchain is required — everything builds
+inside Docker.
+
+When it finishes, open `http://localhost:8000/app/` and paste the printed API
+key into the connect screen. Optional flags: `--workers` (background
+maintenance), `--paper` (IBKR paper engine; needs TWS reachable), `--rebuild`
+(clean image rebuild). The PowerShell script uses `-Workers`, `-Paper`,
+`-Rebuild`.
+
+Tear down with `docker compose down` (add `-v` to also drop the durable
+Postgres/Redis volumes — that wipes the model registry and NAV history).
+
 ## First Setup
 
 Use Python 3.11 for verification:
@@ -126,6 +157,12 @@ python -m quant_platform supervise ^
   --interval 300
 ```
 
+With `QP__V2__ENABLED=true` and `QP__V2__ACCOUNT_ORCHESTRATOR_ENABLED=true`,
+`supervise` runs as the N=1 case of the multi-engine orchestrator (ADR-014) and
+populates the operator console Strategy screen (strategy runs, engine budgets,
+source contributions). Without them it runs the legacy single-engine V1 path,
+which does not write those console tables.
+
 V2 multi-engine:
 
 ```bash
@@ -148,6 +185,43 @@ python -m quant_platform serve-api --host 127.0.0.1 --port 8000
 curl -H "X-API-Key: %QP__API__OPERATOR_API_KEY%" http://127.0.0.1:8000/health/ready
 curl -H "X-API-Key: %QP__API__OPERATOR_API_KEY%" http://127.0.0.1:8000/dashboard/summary
 ```
+
+For live IBKR broker sync (positions/NAV) prefer `scripts/serve_api_native.*`
+over a bare `serve-api`: the Docker image has no `ibapi`, so broker-sync only
+works natively. The script installs `ibapi`, brings up Postgres/Redis, frees the
+port, and exports `QP__LIVE_IBKR__CONTRACTS_FILE` into the process env so the
+console maps account positions (without it the console shows 0 positions). On
+startup the API hydrates cash/NAV from the latest persisted broker snapshot, so
+the console shows the real account, not the `--initial-cash` sim ledger.
+
+Operator console (browser UI):
+
+The same `serve-api` process also serves a React/TypeScript single-page
+console at `http://127.0.0.1:8000/app/` (ADR-013). Build it once with Node,
+then reload:
+
+```bash
+cd ui
+npm install
+npm run build      # emits ui/dist, served by the API under /app
+```
+
+Open `http://127.0.0.1:8000/` (redirects to `/app/`) and paste your
+`QP__API__OPERATOR_API_KEY` into the connect screen. The console is live
+(polled), capability-driven, and read-mostly — the only mutating control is
+the kill-switch clear, gated behind a typed confirmation. Settings → "Modes &
+configuration" inspects the effective config (`GET /v1/config/effective`).
+
+For UI development with hot reload, run the Vite dev server (it proxies API
+calls to `:8000`, so keep `serve-api` running too):
+
+```bash
+cd ui
+npm run dev        # http://localhost:5173/app/
+```
+
+If `ui/dist` is absent, `/app` serves a build-instructions placeholder; the
+JSON API is unaffected.
 
 Data/research:
 

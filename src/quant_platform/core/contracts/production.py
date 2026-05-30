@@ -35,6 +35,7 @@ if TYPE_CHECKING:
         TextSignalGateRecord,
         TextSignalGateStatus,
     )
+    from quant_platform.core.domain.research.runs import StrategyRun
 
 
 @runtime_checkable
@@ -209,6 +210,8 @@ class MultiEngineGovernanceRepository(Protocol):
     async def list_engine_budgets(self) -> list[EngineBudget]: ...
 
     async def save_combined_target(self, target: CombinedPortfolioTarget) -> None: ...
+
+    async def save_strategy_run(self, run: StrategyRun) -> None: ...
 
     async def list_target_contributions(
         self,

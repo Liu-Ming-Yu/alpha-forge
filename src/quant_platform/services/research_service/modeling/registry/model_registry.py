@@ -88,7 +88,17 @@ class InMemoryModelRegistry:
         return job
 
     def due_feature_jobs(self, as_of: datetime) -> list[FeatureJob]:
-        return [job for job in self._jobs.values() if job.enabled and job.next_run_at <= as_of]
+        # Only run jobs whose owning model is still the active model for its
+        # strategy. A superseded model's jobs are skipped even if left enabled —
+        # otherwise stale feature sets (e.g. a deactivated version with no fresh
+        # data) keep running and halt the cycle with DataStalenessError.
+        return [
+            job
+            for job in self._jobs.values()
+            if job.enabled
+            and job.next_run_at <= as_of
+            and self._active_by_strategy.get(job.strategy_name) == job.model_id
+        ]
 
     def mark_job_completed(
         self,

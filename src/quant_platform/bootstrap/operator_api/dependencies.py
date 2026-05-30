@@ -35,6 +35,7 @@ class OperatorApiRuntime:
     audit_sink: Any
     v2_auth_repo: Any | None
     builder: OperatorReadModelBuilder
+    position_repo: Any = None
 
 
 def build_operator_api_runtime(
@@ -155,6 +156,7 @@ def build_operator_api_runtime(
         audit_sink=selected_audit_sink,
         v2_auth_repo=v2_auth_repo,
         builder=builder,
+        position_repo=selected_position_repo,
     )
 
 

@@ -98,6 +98,9 @@ def _settings() -> PlatformSettings:
                 "postgres_dsn": "",
                 "redis_url": "",
             },
+            # Pin V2 off so the operator's .env (which may enable V2) cannot leak
+            # into this in-memory backtest parity check.
+            "v2": {"enabled": False, "account_orchestrator_enabled": False},
         }
     )
 

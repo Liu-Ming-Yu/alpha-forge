@@ -1,44 +1,76 @@
 <div align="center">
 
 <p>
-  <strong>语言 / Language</strong><br>
   <a href="README.md"><kbd>English</kbd></a>
   <kbd>简体中文 · 当前</kbd>
 </p>
 
+<br>
+
 # Alpha Forge
 
-### Introducing Alpha Forge &mdash; 面向系统化交易的 agentic AI 操作系统。
-
 <p>
-  面向一个由价格、语言、流动性、持仓、宏观压力和机器可读叙事共同驱动的市场，
-  Alpha Forge 将研究、LLM 智能、机器学习、治理和执行统一到一个可生产运行的架构中，
-  并与 IBKR 协同工作。
+  <strong>面向系统化交易的 Agentic AI 基础设施。</strong>
 </p>
 
 <p>
-  它把 filings、earnings calls、news、market data、microstructure、
-  ownership、estimates、options 和 macro signals 转化为受治理的 alpha candidates。
-  然后系统会测试它们、挑战它们、版本化它们、审计它们，并在证据足够强之前阻止它们进入组合。
+  Alpha Forge 将 LLM 原生研究、representation learning、组合治理和
+  IBKR-ready execution 收束进一个安静、可审计的 operator system。
 </p>
 
 <p>
-  <sub>Agentic LLM Intelligence / Representation Learning / Autonomous Research / Governed Execution</sub>
-</p>
-
-<p>
-  <a href="https://www.interactivebrokers.com/en/trading/ib-api.php?menu=A" aria-label="打开 Interactive Brokers 官方 API 页面">
-    <img src="docs/assets/ibkr-integration-badge.zh-CN.svg" alt="IBKR 就绪执行：TWS API、IB Gateway，以及受治理的模拟到实盘路径" width="520">
+  <a href="https://github.com/Liu-Ming-Yu/alpha-forge/stargazers">
+    <img alt="GitHub stars" src="https://img.shields.io/github/stars/Liu-Ming-Yu/alpha-forge?style=flat&amp;logo=github&amp;label=Stars&amp;labelColor=0b0b0f&amp;color=111827">
+  </a>
+  <a href="https://github.com/Liu-Ming-Yu/alpha-forge/network/members">
+    <img alt="GitHub forks" src="https://img.shields.io/github/forks/Liu-Ming-Yu/alpha-forge?style=flat&amp;logo=github&amp;label=Forks&amp;labelColor=0b0b0f&amp;color=111827">
+  </a>
+  <a href="https://github.com/Liu-Ming-Yu/alpha-forge/issues">
+    <img alt="GitHub issues" src="https://img.shields.io/github/issues/Liu-Ming-Yu/alpha-forge?style=flat&amp;logo=github&amp;label=Issues&amp;labelColor=0b0b0f&amp;color=111827">
+  </a>
+  <a href="https://github.com/Liu-Ming-Yu/alpha-forge/commits/main">
+    <img alt="GitHub last commit" src="https://img.shields.io/github/last-commit/Liu-Ming-Yu/alpha-forge?style=flat&amp;logo=github&amp;label=Last%20commit&amp;labelColor=0b0b0f&amp;color=111827">
+  </a>
+  <a href="LICENSE">
+    <img alt="GitHub license" src="https://img.shields.io/github/license/Liu-Ming-Yu/alpha-forge?style=flat&amp;label=License&amp;labelColor=0b0b0f&amp;color=111827">
   </a>
 </p>
 
 <p>
+  <img alt="Python 3.11" src="https://img.shields.io/badge/Python-3.11-111827?style=flat&amp;logo=python&amp;logoColor=white&amp;labelColor=0b0b0f">
+  <img alt="Docker ready" src="https://img.shields.io/badge/Docker-ready-111827?style=flat&amp;logo=docker&amp;logoColor=white&amp;labelColor=0b0b0f">
+  <img alt="IBKR ready" src="https://img.shields.io/badge/IBKR-ready-111827?style=flat&amp;labelColor=0b0b0f">
+  <img alt="FastAPI operator API" src="https://img.shields.io/badge/FastAPI-operator%20API-111827?style=flat&amp;logo=fastapi&amp;logoColor=white&amp;labelColor=0b0b0f">
+</p>
+
+<p>
+  <sub>Agentic LLM intelligence / representation learning / autonomous research / governed execution</sub>
+</p>
+
+<p>
+  <a href="#demo"><kbd>Demo</kbd></a>
   <a href="#command-deck"><kbd>指挥台</kbd></a>
   <a href="#architecture-map"><kbd>架构图</kbd></a>
   <a href="#agentic-llm-intelligence-layer"><kbd>LLM 智能层</kbd></a>
   <a href="#autonomous-research-factory"><kbd>研究工厂</kbd></a>
   <a href="#production-execution-fortress"><kbd>执行堡垒</kbd></a>
 </p>
+
+</div>
+
+---
+
+<a id="demo"></a>
+
+## Demo
+
+<div align="center">
+
+<img src="docs/assets/alpha-forge-console-demo.gif" alt="Alpha Forge operator console 演示，展示实时 NAV、broker 状态、readiness 和策略控制" width="100%">
+
+<br>
+
+<sub>用于查看 NAV、broker health、regime state、strategy readiness 和 execution controls 的实时 operator console。</sub>
 
 </div>
 
@@ -439,6 +471,28 @@ python -m quant_platform --help
 
 项目验证使用 Python 3.11。
 
+### Quick start（推荐）
+
+一个命令会创建 venv、安装依赖、安装 `ibapi`（IBKR TWS API -- 不在 PyPI
+上，会自动从 IBKR 下载），并从 example 初始化 `.env`：
+
+```powershell
+pwsh scripts/setup.ps1            # 添加 -Extras 可安装 ml + backtest research extras
+```
+
+macOS/Linux/WSL：
+
+```bash
+bash scripts/setup.sh             # 添加 --extras 可安装 ml + backtest
+```
+
+然后编辑 `.env`（设置 `POSTGRES_PASSWORD`、`QP__API__OPERATOR_API_KEY`，
+以及你的 vendor/broker keys）并启动平台 -- 经纪商能力 API 原生运行
+（`scripts/serve_api_native.ps1`），或启动完整 Docker stack
+（`scripts/deploy.ps1`）。下面是每一步的手动等价命令。
+
+### Manual setup
+
 ```bash
 python -m venv .venv
 .venv\Scripts\activate
@@ -462,7 +516,76 @@ python -m pip install -e ".[ml]"       # XGBoost research
 python -m pip install -e ".[backtest]" # vectorbt backtests
 ```
 
-`ibapi` 不是默认依赖。使用真实 IBKR paper/live 路径时，请从 IBKR TWS API distribution 安装。
+`ibapi`（IBKR TWS API）不在 PyPI 上，所以没有 pip extra 能提供它。
+`scripts/setup.ps1` 会自动安装；如需单独（重新）安装：
+
+```bash
+pwsh scripts/install_ibapi.ps1            # pinned to API 10.46.1; -Version <ver> to override
+bash scripts/install_ibapi.sh             # IBAPI_VERSION=<ver> to override
+```
+
+IBKR 会轮换 hosted builds。如果 pinned download 404，请从
+<https://interactivebrokers.github.io/> 传入当前版本（例如
+`-Version 1047.01`）。
+
+learned-representations 和 sequence-ranker 路径的可选 GPU acceleration 会通过
+`[dl]` extra 安装 torch。PyPI 发布的是 CPU-only wheels；随后安装与你的 GPU 匹配的
+CUDA build（示例：CUDA 12.8 / cu128）：
+
+```bash
+python -m pip install -e ".[dl]"
+python -m pip install torch --index-url https://download.pytorch.org/whl/cu128
+```
+
+GPU 是可选项。没有 CUDA 时，依赖 torch 的测试会自动跳过。
+
+## Run With Docker
+
+Durable paper/live state 保存在 Postgres 和 Redis 中，它们以 Docker services
+运行。完整 stack 可以用一个命令启动：构建 image、启动 Postgres 和 Redis、应用
+migrations、启动 operator API 和 console。deploy script 第一次运行时会把缺失的
+secrets 生成到 `.env`：
+
+```powershell
+pwsh scripts/deploy.ps1            # 添加 -Workers 启动 maintenance worker，-Paper 启动 paper engine，-Rebuild 强制重建
+```
+
+macOS/Linux/WSL：
+
+```bash
+bash scripts/deploy.sh
+```
+
+如果想在 venv 中原生运行平台，但仍使用 durable state，只启动 backing services
+并让 `.env` 指向它们即可。`POSTGRES_PASSWORD` 必须先写入 `.env`，因为 compose
+会读取它：
+
+```bash
+docker compose up -d postgres redis
+```
+
+## Live IBKR Broker (Native API)
+
+Docker image 有意不包含 `ibapi`，所以 containerized API 无法连接 IBKR。要拉取
+live positions/NAV，请在你的 venv 中运行 operator API（此处已安装 `ibapi`），并在
+`127.0.0.1` 上监听 -- TWS API 默认信任该地址，而不会默认信任 container bridge
+address -- 同时继续使用 Dockerized Postgres + Redis：
+
+```bash
+pwsh scripts/serve_api_native.ps1
+bash scripts/serve_api_native.sh
+```
+
+该脚本会确保 `ibapi` 存在，启动 Postgres + Redis，停止 Dockerized API 以释放端口，
+然后原生启动服务。TWS 或 IB Gateway 必须正在运行，并且按 `.env` 中的
+`QP__BROKER__*` 设置可访问（paper TWS = `7497`）。
+
+脚本还会把 `.env` 里的 `QP__LIVE_IBKR__CONTRACTS_FILE` 导出到 process
+environment，让 broker-sync 能映射账户持仓（它直接从 `os.environ` 读取该变量，
+不是通过 pydantic settings）-- 请指向你的交易 universe，例如
+`infra/config/universe_300.json`，否则 console 会显示 0 positions。operator API
+启动时会从最新持久化的 broker snapshot hydrate cash/NAV，所以 console 会反映真实账户，
+而不是 synthetic `--initial-cash` ledger。
 
 ## Configuration
 
@@ -490,6 +613,15 @@ QP__STORAGE__POSTGRES_DSN=postgresql+psycopg://user:pass@host:5432/quant_platfor
 QP__STORAGE__REDIS_URL=redis://localhost:6379/0
 QP__STORAGE__EVENT_BUS_BACKEND=redis_streams
 QP__API__OPERATOR_API_KEY=<strong random key>
+```
+
+operator console 的 Strategy screen（strategy runs、engine budgets、source
+contributions）由 V2 unified runtime 填充。启用后，single-engine supervise 会作为
+N=1 的 multi-engine case 运行，并写入这些 rows（ADR-014）；`run-multi-engine` 也需要它：
+
+```bash
+QP__V2__ENABLED=true
+QP__V2__ACCOUNT_ORCHESTRATOR_ENABLED=true
 ```
 
 常见 IBKR ports：

@@ -1,18 +1,25 @@
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
 import pytest
 
+from quant_platform.bootstrap.engine.multi import load_budgets
 from quant_platform.config import PlatformSettings, V2Settings
 from quant_platform.core.domain.portfolio import PortfolioTarget
 from quant_platform.core.domain.production import EngineBudget, EngineTargetProposal
+from quant_platform.core.domain.research.runs import RunStatus, RunType, StrategyRun
 from quant_platform.engines.multi_engine import MultiEngineRunner
 from quant_platform.infrastructure.repositories.multi_engine_governance import (
     InMemoryMultiEngineGovernanceRepository,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _target(
@@ -415,3 +422,43 @@ async def test_multi_engine_zero_turnover_locks_position() -> None:
     assert Decimal("0.29") <= weight <= Decimal("0.31"), (
         f"max_turnover=0 should hold the prior position (~0.30); got {weight}"
     )
+
+
+@pytest.mark.asyncio
+async def test_save_strategy_run_persists_into_memory() -> None:
+    repo = InMemoryMultiEngineGovernanceRepository()
+    run = StrategyRun(
+        run_id=uuid.uuid4(),
+        strategy_name="cross_sectional_equity_v1",
+        strategy_version="0.1.0",
+        run_type=RunType.PAPER,
+        status=RunStatus.RUNNING,
+        config_snapshot={"run_mode": "paper"},
+        created_at=datetime(2026, 1, 1, tzinfo=UTC),
+        started_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    await repo.save_strategy_run(run)
+    assert repo._strategy_runs[run.run_id] is run  # noqa: SLF001
+
+
+def test_load_budgets_keys_budget_by_canonical_engine_name(tmp_path: Path) -> None:
+    budgets_file = tmp_path / "budgets.json"
+    budgets_file.write_text(
+        json.dumps(
+            {
+                "cross_sectional_equity": {
+                    "capital_weight": 1.0,
+                    "max_gross": 0.6,
+                    "max_turnover": 0.5,
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    budgets = load_budgets(str(budgets_file), ["cross_sectional_equity"])
+
+    assert len(budgets) == 1
+    # The file/CLI use the plugin key ("cross_sectional_equity"); the budget must
+    # be keyed by the canonical proposal name so the merge lookup matches.
+    assert budgets[0].engine_name == "cross_sectional_equity_v1"

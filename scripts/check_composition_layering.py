@@ -49,19 +49,37 @@ APPROVED_COMPOSITION_EDGES: frozenset[tuple[str, str]] = frozenset(
             "src/quant_platform/bootstrap/engine/__init__.py",
             "quant_platform.engines.session.public_api",
         ),
-        (
-            "src/quant_platform/bootstrap/engine/multi.py",
-            "quant_platform.engines.account.orchestrator",
-        ),
         ("src/quant_platform/bootstrap/engine/multi.py", "quant_platform.engines.engine_runner"),
         (
             "src/quant_platform/bootstrap/engine/multi.py",
             "quant_platform.engines.market_data.price_seeding",
         ),
-        ("src/quant_platform/bootstrap/engine/multi.py", "quant_platform.engines.multi_engine"),
         (
             "src/quant_platform/bootstrap/engine/multi.py",
             "quant_platform.engines.framework.plugins",
+        ),
+        # orchestrator_runner: the unified single/multi-engine loop runner
+        # (ADR-014) assembles + drives the account orchestrator, mirroring
+        # multi.py's bootstrap->engines composition edges.
+        (
+            "src/quant_platform/bootstrap/engine/orchestrator_runner.py",
+            "quant_platform.engines.account.orchestrator",
+        ),
+        (
+            "src/quant_platform/bootstrap/engine/orchestrator_runner.py",
+            "quant_platform.engines.engine_runner",
+        ),
+        (
+            "src/quant_platform/bootstrap/engine/orchestrator_runner.py",
+            "quant_platform.engines.framework.plugins",
+        ),
+        (
+            "src/quant_platform/bootstrap/engine/orchestrator_runner.py",
+            "quant_platform.engines.market_data.price_seeding",
+        ),
+        (
+            "src/quant_platform/bootstrap/engine/orchestrator_runner.py",
+            "quant_platform.engines.multi_engine",
         ),
         (
             "src/quant_platform/bootstrap/engine/session_wiring.py",

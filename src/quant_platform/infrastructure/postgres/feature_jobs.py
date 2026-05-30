@@ -74,12 +74,16 @@ class PostgresFeatureJobsMixin:
                         await conn.execute(
                             text(
                                 """
-                            SELECT job_id, model_id, strategy_name, feature_set_version,
-                                   interval_seconds, next_run_at, last_run_at, enabled,
-                                   consecutive_failures
-                            FROM feature_jobs
-                            WHERE enabled = true AND next_run_at <= :as_of
-                            ORDER BY next_run_at ASC
+                            SELECT fj.job_id, fj.model_id, fj.strategy_name,
+                                   fj.feature_set_version, fj.interval_seconds,
+                                   fj.next_run_at, fj.last_run_at, fj.enabled,
+                                   fj.consecutive_failures
+                            FROM feature_jobs fj
+                            JOIN registered_models rm ON rm.model_id = fj.model_id
+                            WHERE fj.enabled = true
+                              AND fj.next_run_at <= :as_of
+                              AND rm.active = true
+                            ORDER BY fj.next_run_at ASC
                             """
                             ),
                             {"as_of": as_of},

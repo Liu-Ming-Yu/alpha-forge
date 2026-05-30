@@ -19,6 +19,8 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, cast
 
+import structlog
+
 from quant_platform.bootstrap.operator_api.dependencies import build_operator_api_runtime
 from quant_platform.bootstrap.operator_api.research_queries import (
     build_operator_research_query_service,
@@ -53,6 +55,9 @@ if TYPE_CHECKING:
     class OperatorKillSwitchStore(Protocol):
         async def get(self) -> object: ...
         async def clear(self, *, operator_id: str, as_of: datetime) -> None: ...
+
+
+_log = structlog.get_logger(__name__)
 
 
 def create_app(
@@ -112,6 +117,26 @@ def create_app(
     # Using a list avoids the `nonlocal` dance across nested closures.
     _shutting_down: list[bool] = [False]
 
+    async def _hydrate_ledger_from_latest_snapshot() -> None:
+        # Seed the read-model cash ledger from the latest broker-authoritative
+        # account snapshot (written by reconciliation) so the console shows the
+        # REAL account, not the synthetic --initial-cash stub. Falls back to the
+        # stub when no snapshot exists yet.
+        repo = runtime.position_repo
+        reset = getattr(ledger, "reset_from_snapshot", None)
+        if repo is None or reset is None:
+            return
+        snapshot = await repo.get_latest_snapshot()
+        if snapshot is None:
+            return
+        reset(snapshot)
+        _log.info(
+            "operator_api.ledger_hydrated",
+            settled_cash=str(snapshot.settled_cash),
+            net_asset_value=str(snapshot.net_asset_value),
+            positions=len(snapshot.positions),
+        )
+
     app = FastAPI(
         title="Quant Platform Operator API",
         version="0.1.0",
@@ -119,7 +144,9 @@ def create_app(
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
-        lifespan=build_operator_api_lifespan(_shutting_down),
+        lifespan=build_operator_api_lifespan(
+            _shutting_down, on_startup=_hydrate_ledger_from_latest_snapshot
+        ),
     )
 
     # --- CORS lockdown ------------------------------------------------------

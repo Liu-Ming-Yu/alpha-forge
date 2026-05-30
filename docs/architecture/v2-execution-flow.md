@@ -7,6 +7,11 @@ V2 is the guarded shared-account execution path for multi-engine operation. When
 single-engine execution delegates to V2 or fails closed so two live submitters
 cannot compete for the same account.
 
+Per [ADR-014](adr-014-unified-engine-runtime.md), the `supervise` and
+`run-multi-engine` paths now drive one shared `AccountOrchestratorLoopRunner`:
+single-engine is the N=1 case of the multi-engine orchestrator, so both write the
+same governance/read-model rows the operator console reads.
+
 ## Intended Flow
 
 ```text
