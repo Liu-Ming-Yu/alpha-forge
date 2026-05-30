@@ -59,6 +59,14 @@ class EngineConfig:
     #: select a different family (e.g. ``pv-formulaic-live-v1`` for Arm G).
     feature_set_version: str = ""
     required_features: tuple[str, ...] = ()
+    #: Governance identity for the model-registry preflight. When set, the engine
+    #: preflights against the PROMOTED model under this strategy name / model
+    #: version instead of its own ``engine_name`` / ``engine_version`` heartbeat.
+    #: Both ``None`` ⇒ preflight uses engine_name/engine_version (every existing
+    #: plugin, unchanged). Arm Q sets these to the promoted research-arm identity
+    #: so ib-paper preflight matches without ``REQUIRE_REGISTERED_MODEL_MATCH=false``.
+    registered_model_name: str | None = None
+    registered_model_version: str | None = None
     signal_model_factory: (
         Callable[
             [dict[str, float], str],

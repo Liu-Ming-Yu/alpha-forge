@@ -70,6 +70,16 @@ class OperatorApiRouteContext:
                 "redis": bool(self.settings.storage.redis_url),
                 "production_candidate": True,
                 "readiness_snapshot": self.v2_auth_repo is not None,
+                "command_catalog": True,
+                "command_execution": bool(
+                    getattr(self.settings.api, "enable_command_execution", False)
+                ),
+                "backtest": True,
+                "broker_sync": True,
+                "system_status": True,
+                "model_registry": True,
+                "feature_families": True,
+                "alpha_library": True,
             },
             "write_controls": write_controls,
             "unsupported_features": [

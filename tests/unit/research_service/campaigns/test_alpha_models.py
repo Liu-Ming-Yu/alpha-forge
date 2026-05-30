@@ -336,3 +336,98 @@ class TestGradientBoostedRankerRankMode:
         )
         assert len(evidence.folds) >= 1
         assert math.isfinite(evidence.metrics["slippage_adjusted_sharpe"])
+
+
+# -- 4. Robust IC ranker (downside-weighted) ------------------------------------
+
+
+def _fragile_samples(
+    *, n_days: int = 60, n_instruments: int = 40, seed: int = 7
+) -> list[SupervisedAlphaSample]:
+    """f_robust predicts consistently; f_fragile predicts well most days but
+    *inverts* on a recurring ~1/3 of days (a momentum-crash analogue).
+
+    Mean IC of f_fragile is positive, so a mean-IC weighting keeps it; but its
+    downside (worst-tercile) IC is sharply negative, so the robust ranker drops
+    it. f_robust holds in both regimes.
+    """
+    rng = random.Random(seed)
+    insts = [uuid.uuid4() for _ in range(n_instruments)]
+    out: list[SupervisedAlphaSample] = []
+    for d in range(n_days):
+        crash = d % 3 == 0  # every third day is a "crash" day
+        for inst in insts:
+            f_robust = rng.gauss(0.0, 1.0)
+            f_fragile = rng.gauss(0.0, 1.0)
+            sign = -1.0 if crash else 1.0
+            forward = 0.25 * f_robust + sign * 0.6 * f_fragile + 0.1 * rng.gauss(0.0, 1.0)
+            out.append(
+                SupervisedAlphaSample(
+                    as_of=datetime(2026, 1, 1, tzinfo=UTC) + timedelta(days=d),
+                    instrument_id=inst,
+                    features={"f_robust": f_robust, "f_fragile": f_fragile},
+                    forward_return=forward,
+                )
+            )
+    return out
+
+
+class TestRobustICRanker:
+    def test_satisfies_protocols(self) -> None:
+        from quant_platform.services.research_service.campaigns.models import (
+            RobustICRanker,
+        )
+
+        model = RobustICRanker()
+        assert isinstance(model, AlphaModel)
+        fitted = model.fit(_samples(), ["f1", "f2"])
+        assert isinstance(fitted, FittedAlphaModel)
+        assert model.name == "robust-ic-downside"
+
+    def test_downweights_downside_fragile_feature(self) -> None:
+        # The whole point: a feature whose IC craters on bad days is dropped /
+        # heavily down-weighted versus one that holds, even though both have a
+        # positive *mean* IC. Mean-IC weighting (LinearICRanker) would keep both.
+        from quant_platform.services.research_service.campaigns.models import (
+            LinearICRanker,
+            RobustICRanker,
+        )
+
+        samples = _fragile_samples()
+        names = ["f_robust", "f_fragile"]
+        robust_w = dict(RobustICRanker().fit(samples, names).feature_weights())
+        linear_w = dict(LinearICRanker().fit(samples, names).feature_weights())
+        # Robust ranker concentrates on the crash-robust feature.
+        assert robust_w.get("f_robust", 0.0) > robust_w.get("f_fragile", 0.0)
+        # And it is markedly more concentrated on f_robust than the mean-IC fit.
+        assert robust_w.get("f_robust", 0.0) > linear_w.get("f_robust", 0.0)
+
+    def test_score_preserves_order_and_normalized_weights(self) -> None:
+        from quant_platform.services.research_service.campaigns.models import (
+            RobustICRanker,
+        )
+
+        samples = _samples()
+        fitted = RobustICRanker().fit(samples, ["f1", "f2"])
+        assert len(fitted.score(samples)) == len(samples)
+        weights = dict(fitted.feature_weights())
+        assert weights  # non-empty
+        assert sum(weights.values()) == pytest.approx(1.0, abs=1e-9)
+
+    def test_plugs_into_walk_forward(self) -> None:
+        import math
+
+        from quant_platform.services.research_service.campaigns.models import (
+            RobustICRanker,
+        )
+
+        evidence = run_sample_walk_forward(
+            samples=_samples(),
+            config=_wf_config(),
+            model_version="robust-ic-downside",
+            feature_set_version="test-fs",
+            feature_names=["f1", "f2"],
+            model=RobustICRanker(),
+        )
+        assert len(evidence.folds) >= 1
+        assert math.isfinite(evidence.metrics["slippage_adjusted_sharpe"])

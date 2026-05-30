@@ -68,23 +68,20 @@ class TestThresholdValueRelationships:
         assert RESEARCH_RANKER_BASELINE_THRESHOLDS.max_drawdown == -0.20
 
     def test_portfolio_candidate_streak_is_looser_than_baseline(self) -> None:
-        # Looser streak: long-only construction absorbs negative-IC
-        # stretches that would be catastrophic for an unconstrained
-        # signed-rank book. Post-ADR-004-addendum the floor matches the
-        # baseline (2); the laxity now lives in the drawdown-conditioned
-        # relaxed cap, which must exceed the baseline floor.
+        # v3 (ADR-004 2026-05-29): the negative-IC-streak count proved not
+        # OOS-stable (held-out calibration: same arm shows cal streak 3 / val
+        # streak 7), so the candidate gate demotes it to a loose catastrophic
+        # backstop at the one OOS-stable cap (9) and gates robustness on
+        # bootstrap-IC significance instead. The backstop is still looser than
+        # the baseline's strict floor.
         assert (
             PORTFOLIO_CANDIDATE_THRESHOLDS.max_fold_negative_ic_streak
-            == RESEARCH_RANKER_BASELINE_THRESHOLDS.max_fold_negative_ic_streak
+            > RESEARCH_RANKER_BASELINE_THRESHOLDS.max_fold_negative_ic_streak
         )
-        relaxed_cap = PORTFOLIO_CANDIDATE_THRESHOLDS.max_fold_negative_ic_streak_if_dd_contained
-        assert relaxed_cap is not None
-        assert relaxed_cap > RESEARCH_RANKER_BASELINE_THRESHOLDS.max_fold_negative_ic_streak
-        # The baseline must NOT carry a relaxation — it has no construction to
-        # earn it.
-        assert (
-            RESEARCH_RANKER_BASELINE_THRESHOLDS.max_fold_negative_ic_streak_if_dd_contained is None
-        )
+        # The v2 drawdown-conditioned relaxation is superseded by the bootstrap
+        # gate: the candidate carries the robustness gate, the baseline does not.
+        assert PORTFOLIO_CANDIDATE_THRESHOLDS.min_bootstrap_ic_p05 == 0.0
+        assert RESEARCH_RANKER_BASELINE_THRESHOLDS.min_bootstrap_ic_p05 is None
 
     def test_portfolio_candidate_drawdown_is_tighter_than_baseline(self) -> None:
         # Tighter drawdown: if a tagged-candidate's construction
@@ -182,90 +179,103 @@ class TestThresholdsByArmCategory:
 
 
 class TestPerCategoryGateSeparation:
-    """The smallest test that pins the new governance contract.
+    """Pins the v3 governance contract (ADR-004 2026-05-29).
 
-    G's actual v4 metrics (Sharpe 1.0886, DD −4.21%, streak 4)
-    should:
-    * FAIL the research_ranker_baseline gate (streak 4 > 2)
-    * PASS the portfolio_candidate gate (every check inside the
-      looser thresholds, including streak 4 == 4 and DD −4.21% >
-      −10%)
+    The eligible lead on the corrected (normfixed) A–N evidence is D-shaped
+    (Sharpe > 1, statistically-positive IC). It must:
+    * FAIL the research_ranker_baseline gate (its streak exceeds the strict
+      floor 2), and
+    * PASS the portfolio_candidate gate (streak within the loose backstop 9,
+      bootstrap-IC significantly positive, Sharpe and DD inside bounds).
+    And a J-shaped arm (highest Sharpe of all, but its edge is one crash
+    episode so the IC is not robustly positive) must FAIL the candidate gate on
+    the bootstrap-IC robustness check — the whole point of the v3 redesign.
     """
 
-    def _g_metrics(self) -> dict[str, float]:
-        # Verbatim from the realized_v2 universe-300 run, Arm G evidence.
-        # The summer-2024 streak-4 episode was absorbed by the construction:
-        # cumulative return over the four folds was ~flat, so the within-streak
-        # drawdown is negligible (well inside the −10% bound).
+    def _candidate_lead_metrics(self) -> dict[str, float]:
+        # D-shaped: the eligible lead on the corrected A–N evidence.
         return {
-            "oos_rolling_ic": 0.2561,
-            "ic_60d": 0.0912,
-            "fold_negative_ic_streak": 4.0,
-            "max_drawdown": -0.0421,
-            "max_drawdown_during_worst_streak": -0.004,
-            "slippage_adjusted_sharpe": 1.0886,
+            "oos_rolling_ic": 0.162,
+            "ic_60d": 0.057,
+            "fold_negative_ic_streak": 7.0,
+            "max_drawdown": -0.033,
+            "bootstrap_ic_p05": 0.018,
+            "slippage_adjusted_sharpe": 1.091,
         }
 
-    def test_g_fails_research_ranker_baseline_gate(self) -> None:
-        result = eligibility(self._g_metrics(), RESEARCH_RANKER_BASELINE_THRESHOLDS)
-        assert result["passed"] is False
-        # The failing check should be the streak — Sharpe and DD
-        # would pass even the strict baseline gate. If a future
-        # tune flips this, recalibrate the test against the new
-        # values; this is a regression guard, not an axiom.
-        failing = [c for c in result["checks"] if not c["passed"]]
-        assert len(failing) == 1
-        assert failing[0]["name"] == "fold_negative_ic_streak"
-        assert failing[0]["actual"] == 4
-        assert failing[0]["threshold"] == 2
+    def _episode_trader_metrics(self) -> dict[str, float]:
+        # J-shaped: highest Sharpe of any arm, but its edge is one crash episode,
+        # so the bootstrapped fold-IC's 5th percentile is negative — the IC is
+        # not statistically positive across regimes.
+        return {
+            "oos_rolling_ic": 0.268,
+            "ic_60d": 0.053,
+            "fold_negative_ic_streak": 9.0,
+            "max_drawdown": -0.035,
+            "bootstrap_ic_p05": -0.006,
+            "slippage_adjusted_sharpe": 1.280,
+        }
 
-    def test_g_passes_portfolio_candidate_gate(self) -> None:
-        result = eligibility(self._g_metrics(), PORTFOLIO_CANDIDATE_THRESHOLDS)
+    def test_lead_fails_research_ranker_baseline_gate(self) -> None:
+        result = eligibility(self._candidate_lead_metrics(), RESEARCH_RANKER_BASELINE_THRESHOLDS)
+        assert result["passed"] is False
+        # Baseline carries no bootstrap gate; it rejects the lead on the strict
+        # streak floor (7 > 2).
+        failing = [c for c in result["checks"] if not c["passed"]]
+        assert any(c["name"] == "fold_negative_ic_streak" for c in failing)
+
+    def test_lead_passes_portfolio_candidate_gate(self) -> None:
+        result = eligibility(self._candidate_lead_metrics(), PORTFOLIO_CANDIDATE_THRESHOLDS)
         assert result["passed"] is True, (
-            "G's v4 metrics MUST pass the portfolio_candidate gate; "
-            "if this fails, either the threshold values changed or "
-            "the gate logic regressed."
+            "The D-shaped lead MUST pass the v3 portfolio_candidate gate; if "
+            "this fails, a threshold value or the gate logic regressed."
         )
-        # Verify each check individually passed so a regression
-        # reveals which gate slipped.
         for check in result["checks"]:
             assert check["passed"], f"check {check['name']!r} unexpectedly failed: {check}"
 
-    def test_baseline_with_high_drawdown_still_blocked_by_dd_gate(self) -> None:
-        # Defensive: a portfolio_candidate that produces a -15% DD
-        # (worse than the -10% gate) is rejected even with a
-        # within-bound streak. The construction-trust contract goes
-        # both ways.
+    def test_episode_trader_rejected_by_bootstrap_gate(self) -> None:
+        # The v3 contract: a high-Sharpe arm whose IC is not statistically
+        # positive is rejected. bootstrap_ic_p05 is the binding robustness gate
+        # that replaced the OOS-unstable streak count.
+        result = eligibility(self._episode_trader_metrics(), PORTFOLIO_CANDIDATE_THRESHOLDS)
+        assert result["passed"] is False
+        failing = [c for c in result["checks"] if not c["passed"]]
+        assert len(failing) == 1
+        assert failing[0]["name"] == "bootstrap_ic_p05"
+
+    def test_candidate_with_high_drawdown_still_blocked_by_dd_gate(self) -> None:
+        # Defensive: a portfolio_candidate that produces a -15% DD (worse than
+        # the -10% gate) is rejected even with a within-backstop streak and a
+        # significantly-positive IC. The construction-trust contract is two-way.
         broken_candidate = {
             "oos_rolling_ic": 0.10,
             "ic_60d": 0.05,
             "fold_negative_ic_streak": 1.0,
             "max_drawdown": -0.15,  # WORSE than candidate's −0.10 gate
+            "bootstrap_ic_p05": 0.02,
             "slippage_adjusted_sharpe": 1.5,
         }
         result = eligibility(broken_candidate, PORTFOLIO_CANDIDATE_THRESHOLDS)
         assert result["passed"] is False
         failing = [c for c in result["checks"] if not c["passed"]]
-        # Only the DD gate should fail; everything else is loose.
         assert len(failing) == 1
         assert failing[0]["name"] == "max_drawdown"
 
     def test_loose_streak_does_not_help_baseline(self) -> None:
-        # A research_ranker_baseline with streak=4 is rejected
-        # under its own (strict) gate even though that streak would
-        # pass under the portfolio_candidate gate. Categories don't
-        # share thresholds — that's the whole point of the change.
+        # A research_ranker_baseline with streak=4 is rejected under its own
+        # (strict floor 2) gate even though that streak is within the candidate's
+        # loose backstop. Categories don't share thresholds — that's the point.
         metrics_with_streak_4 = {
             "oos_rolling_ic": 0.10,
             "ic_60d": 0.05,
             "fold_negative_ic_streak": 4.0,
             "max_drawdown": -0.05,
-            "max_drawdown_during_worst_streak": -0.02,  # contained within −0.10
+            "bootstrap_ic_p05": 0.02,
             "slippage_adjusted_sharpe": 1.5,
         }
         baseline_result = eligibility(metrics_with_streak_4, RESEARCH_RANKER_BASELINE_THRESHOLDS)
         assert baseline_result["passed"] is False
-        # Same metrics, candidate gate → pass.
+        # Same metrics, candidate gate → pass (streak 4 ≤ backstop 9, IC robust).
         candidate_result = eligibility(metrics_with_streak_4, PORTFOLIO_CANDIDATE_THRESHOLDS)
         assert candidate_result["passed"] is True
 
@@ -274,13 +284,24 @@ class TestPerCategoryGateSeparation:
 
 
 class TestDrawdownConditionedStreakGate:
-    """The streak relaxation is earned per-episode by realized drawdown.
+    """The drawdown-conditioned streak relaxation MECHANISM (ADR-004 v2).
 
-    A streak above the strict floor (2) is tolerated up to the hard cap (6)
-    *only if* the drawdown during that streak stayed inside the tight
-    containment bound (−5%). Otherwise the floor applies and the relaxation is
-    forfeit — even when the full-run drawdown gate still passes.
+    v3 (2026-05-29) demoted the streak to a loose OOS-stable backstop, so the
+    ``portfolio_candidate`` preset no longer opts into this relaxation. The
+    mechanism itself still lives in ``_streak_check`` (any threshold may set the
+    DD-conditioned fields), so these tests pin it against an explicit v2-style
+    threshold rather than the preset, keeping the relaxation branch covered.
     """
+
+    # Explicit v2-style threshold: strict floor 2, relaxed cap 6 when the
+    # within-streak drawdown stays inside −5%. NOT the production preset.
+    _V2_THRESHOLDS = AlphaEligibilityThresholds(
+        name="v2-streak-mechanism-test",
+        max_fold_negative_ic_streak=2,
+        max_fold_negative_ic_streak_if_dd_contained=6,
+        streak_containment_max_drawdown=-0.05,
+        max_drawdown=-0.10,
+    )
 
     def _candidate_metrics(
         self,
@@ -307,13 +328,13 @@ class TestDrawdownConditionedStreakGate:
         # streak 2 <= floor 2: passes via the floor; the within-streak DD is
         # not even consulted (here it is deliberately catastrophic).
         metrics = self._candidate_metrics(streak=2.0, dd_in_streak=-0.99)
-        check = self._streak_check(eligibility(metrics, PORTFOLIO_CANDIDATE_THRESHOLDS))
+        check = self._streak_check(eligibility(metrics, self._V2_THRESHOLDS))
         assert check["passed"] is True
         assert check["threshold"] == 2
 
     def test_streak_above_floor_passes_when_dd_contained(self) -> None:
         metrics = self._candidate_metrics(streak=4.0, dd_in_streak=-0.01)
-        check = self._streak_check(eligibility(metrics, PORTFOLIO_CANDIDATE_THRESHOLDS))
+        check = self._streak_check(eligibility(metrics, self._V2_THRESHOLDS))
         assert check["passed"] is True
         assert check["threshold"] == 6  # relaxed cap applied
 
@@ -322,7 +343,7 @@ class TestDrawdownConditionedStreakGate:
         # the streak episode itself caused −8% (worse than the −5% containment
         # bound), so the relaxation is forfeit and the strict floor applies.
         metrics = self._candidate_metrics(streak=4.0, dd_in_streak=-0.08, full_dd=-0.09)
-        result = eligibility(metrics, PORTFOLIO_CANDIDATE_THRESHOLDS)
+        result = eligibility(metrics, self._V2_THRESHOLDS)
         check = self._streak_check(result)
         assert check["passed"] is False
         assert check["threshold"] == 2  # reverted to floor
@@ -334,6 +355,6 @@ class TestDrawdownConditionedStreakGate:
         # The GBDT-rank shape: streak 9 with a fully-contained episode still
         # exceeds the hard cap.
         metrics = self._candidate_metrics(streak=9.0, dd_in_streak=0.0)
-        check = self._streak_check(eligibility(metrics, PORTFOLIO_CANDIDATE_THRESHOLDS))
+        check = self._streak_check(eligibility(metrics, self._V2_THRESHOLDS))
         assert check["passed"] is False
         assert check["threshold"] == 6

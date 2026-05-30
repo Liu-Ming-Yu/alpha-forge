@@ -44,7 +44,7 @@ def register(sub: Any) -> None:
     )
     sup_p.add_argument(
         "--engine",
-        choices=["cross_sectional_equity", "etf_macro_allocator", "arm_g"],
+        choices=["cross_sectional_equity", "etf_macro_allocator", "arm_g", "arm_q"],
         default="cross_sectional_equity",
         help="Engine to supervise. Default: cross_sectional_equity.",
     )

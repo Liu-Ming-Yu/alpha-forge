@@ -48,19 +48,34 @@ def _bars(n_instruments: int = 3, n_days: int = 55) -> dict[uuid.UUID, list[Mark
     return by_instrument
 
 
-def test_bundle_carries_raw_latest_row_features() -> None:
+def test_bundle_carries_cross_sectionally_rank_normalized_features() -> None:
     bars = _bars()
     bundle = build_pv_formulaic_feature_bundle(bars)
 
     assert bundle.alpha_features  # non-empty
     assert all(isinstance(k, uuid.UUID) for k in bundle.alpha_features)
 
-    # Bundle values are the RAW latest-row features (not re-normalized).
+    # Bundle values are the RANK-NORMALIZED latest-row features (the live half of
+    # the dollar-volume fix) — the per-date cross-sectional percentile rank, NOT
+    # the raw values. Verify against the same kernel the backtest scorer uses.
+    from quant_platform.services.research_service.features.kernel.transforms import (  # noqa: PLC0415
+        cross_sectional_rank_normalize,
+    )
+    from quant_platform.services.research_service.features.pv_formulaic.compute import (  # noqa: PLC0415
+        PV_FORMULAIC_FEATURE_NAMES,
+    )
+
     frame = compute_pv_formulaic_frame(market_bars_to_ohlcv_frame(bars))
-    latest = frame.sort_values("date").groupby("instrument_id").tail(1).set_index("instrument_id")
+    latest = frame.sort_values("date").groupby("instrument_id", sort=False).tail(1)
+    cols = [n for n in PV_FORMULAIC_FEATURE_NAMES if n in latest.columns]
+    expected = cross_sectional_rank_normalize(latest, cols, date_column="date").set_index(
+        "instrument_id"
+    )
+    # Ranks live in [0, 1]; not all identical (a genuine cross-section of 3 names).
     for inst, feats in bundle.alpha_features.items():
         for name, value in feats.items():
-            assert value == pytest.approx(float(latest.loc[inst, name]))
+            assert 0.0 <= value <= 1.0
+            assert value == pytest.approx(float(expected.loc[inst, name]))
 
 
 def test_bundle_empty_for_no_bars() -> None:
@@ -68,13 +83,15 @@ def test_bundle_empty_for_no_bars() -> None:
 
 
 def test_as_of_uses_only_in_window_bars() -> None:
-    bars = _bars(n_instruments=1, n_days=40)
+    # Multiple instruments so the cross-sectional ranks are non-degenerate (a
+    # single name would rank 1.0 on every feature regardless of the window).
+    bars = _bars(n_instruments=3, n_days=40)
     full = build_pv_formulaic_feature_bundle(bars)
-    # Cut off before the last bar: the latest row (and its feature values) differ.
     only = next(iter(bars))
     cutoff = bars[only][-3].timestamp - timedelta(hours=1)
     trimmed = build_pv_formulaic_feature_bundle(bars, as_of=cutoff)
     assert trimmed.alpha_features  # still computes from the in-window history
+    # A different as-of ⇒ a different latest-row cross-section ⇒ different ranks.
     assert full.alpha_features[only] != trimmed.alpha_features[only]
 
 

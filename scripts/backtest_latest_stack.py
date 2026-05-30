@@ -233,6 +233,7 @@ from quant_platform.services.research_service.campaigns.metrics.return_metrics i
     non_overlapping_bucket_returns,
 )
 from quant_platform.services.research_service.campaigns.models.gbdt import GradientBoostedRanker
+from quant_platform.services.research_service.campaigns.models.robust_linear import RobustICRanker
 from quant_platform.services.research_service.campaigns.models.sequence import GRUSequenceRanker
 from quant_platform.services.research_service.campaigns.portfolio.costs import QuadraticImpactCost
 from quant_platform.services.research_service.campaigns.portfolio.selection import (
@@ -244,7 +245,10 @@ from quant_platform.services.research_service.campaigns.portfolio.streak_risk im
 from quant_platform.services.research_service.campaigns.portfolio.types import (
     CampaignPortfolioConfig,
 )
-from quant_platform.services.research_service.campaigns.portfolio.weighting import InverseVolWeight
+from quant_platform.services.research_service.campaigns.portfolio.weighting import (
+    ConvictionWeight,
+    InverseVolWeight,
+)
 from quant_platform.services.research_service.modeling.walk_forward.walk_forward import (
     WalkForwardConfig,
 )
@@ -320,7 +324,12 @@ MODEL_VERSION = "ic-weighted-non-negative"
 #: features (regime-v1 family, see ADR-005). The regime panel is only
 #: built when at least one requested arm declares
 #: ``panel_key="pv_form_regime"``.
-PanelKey = Literal["pv", "pv_form", "full", "pv_form_regime"]
+#:
+#: ``pv_form_fund`` = ``pv_form`` augmented with the 9 Sharadar quality+value
+#: fundamentals (PIT-aligned), an alpha source orthogonal to momentum — tests
+#: whether it diversifies the momentum-crash fragility. Built only when a
+#: requested arm declares ``panel_key="pv_form_fund"``.
+PanelKey = Literal["pv", "pv_form", "full", "pv_form_regime", "pv_form_fund"]
 
 
 @dataclass(frozen=True)
@@ -434,6 +443,22 @@ def _gru_ranker_factory() -> AlphaModel:
     return GRUSequenceRanker(objective="ic", device="auto")
 
 
+def _robust_ic_ranker_factory() -> AlphaModel:
+    """Downside-robust IC-weighted ranker for Arm O (ADR-004/011 follow-up).
+
+    Module-level (not a lambda) so the owning ``ArmSpec`` pickles for the
+    ProcessPoolExecutor on Windows-spawn. Same linear scoring as G (returns a
+    ``_FittedLinearRanker`` → rank-normalized weighted sum), but the per-feature
+    weights are fit from the downside of each feature's daily-IC distribution so
+    crash-fragile medium-term momentum is down-weighted in favour of the
+    crash-robust volatility/range, reversal, and long-horizon factors. Tests
+    whether the in-sample robustness gain (IC-IR ~0.09 → ~0.21, crash IC flipped
+    positive) survives out-of-sample. Defaults (downside_weight 2.0, q 0.33)
+    match the feasibility sweep.
+    """
+    return RobustICRanker()
+
+
 def _quadratic_impact_cost_factory() -> TradingCostModel:
     """Quadratic market-impact cost model for Arm K (qlib plan item 2).
 
@@ -465,6 +490,25 @@ def _inverse_vol_weight_factory() -> WeightingScheme:
     per-name sizing differs.
     """
     return InverseVolWeight(vol_feature="low_vol_63d", shrinkage=0.5, vol_floor=0.005)
+
+
+def _conviction_weight_factory() -> WeightingScheme:
+    """Conviction-proportional weighting for Arm Q (the IC->Sharpe / TC lever).
+
+    Module-level (not a lambda) so the owning ``ArmSpec`` pickles for the
+    ProcessPoolExecutor on Windows-spawn. Sizes the top-30 by alpha conviction
+    (score above the selection floor) rather than equal weight, raising the
+    transfer coefficient in the Fundamental Law (IR = IC*sqrt(BR)*TC). The
+    rank-normalized composite still chooses the names; only sizing differs.
+    ``shrinkage=0.25`` is the sweep-selected peak: it blends a quarter back to
+    equal weight to blunt estimation error (the book's "1/N beats 14 optimizers"
+    guardrail). The shrinkage sweep (2026-05-29) is decisive and non-monotonic —
+    pure conviction (0.0) *underperforms* (Sharpe 0.956) because zeroing the
+    marginal names over-concentrates (lower effective breadth); 0.25 peaks at
+    Sharpe 1.0211 and 0.5 is ~tied at 1.018. No ``vol_feature`` — pure conviction
+    tilt to isolate the transfer-coefficient lever from Arm L's risk tilt.
+    """
+    return ConvictionWeight(shrinkage=0.25, reference="min")
 
 
 def _buffered_topk_selection_factory() -> SelectionStrategy:
@@ -704,6 +748,84 @@ ARM_SPECS: tuple[ArmSpec, ...] = (
         fold_streak_risk_config_factory=_default_fold_streak_risk_config,
         model_factory=_gru_ranker_factory,
     ),
+    # Arm O = Arm G's exact construction (linear-family, no-PCA pv+formulaic,
+    # long-only top-30, streak dial) but with the downside-robust IC ranker
+    # instead of mean-IC weighting. The regime decomposition showed G's
+    # medium-term momentum inverts during crashes; O fits weights from the
+    # downside of each feature's daily-IC distribution to drop crash-fragile
+    # factors and keep crash-robust ones (vol/range, reversal, long horizon).
+    # OOS VERDICT (2026-05-29, normfixed universe-300): NEGATIVE. The in-sample
+    # robustness gain (IC-IR 0.09→0.21) did NOT survive the walk-forward. O cuts
+    # the streak (G 7 → O 4 — the crash-robust features do hold) but GUTS the
+    # alpha: oos_ic 0.159→0.041, ic_60d 0.063→−0.029, bootstrap_p05 +0.015→
+    # −0.015, decile spread +0.004→−0.003; Sharpe 0.852→0.816. The crash-robust
+    # features are defensive but weak — dropping momentum removes the fragility
+    # AND the alpha. Confirms the alpha is intrinsically momentum (can't keep it
+    # without the crash exposure via a linear reweighting). Kept as a documented
+    # negative result in the research ledger. O stays a portable LINEAR model.
+    ArmSpec(
+        cli_alias="O",
+        canonical_name="long_only_top30_pv_formulaic_streakdial_robustic",
+        category="portfolio_candidate",
+        production_candidate=True,
+        panel_key="pv_form",
+        requires_pca=False,
+        portfolio_config_factory=_long_only_top30_config,
+        fold_streak_risk_config_factory=_default_fold_streak_risk_config,
+        model_factory=_robust_ic_ranker_factory,
+    ),
+    # Arm P = Arm G's construction (linear ranker, long-only top-30, streak
+    # dial) on the pv+formulaic panel AUGMENTED with the 9 Sharadar quality+
+    # value fundamentals (PIT-aligned). Fundamentals are orthogonal to momentum;
+    # hypothesis: they diversify G's crash fragility and lift risk-adjusted
+    # return. Same model/construction/dial as G; only the panel differs.
+    # OOS VERDICT (2026-05-29, normfixed universe-300): PARTIAL / positive on IC,
+    # insufficient for eligibility. Fundamentals ADD genuine orthogonal alpha —
+    # oos_ic 0.159→0.190 (+20%), ic_60d 0.063→0.072, bootstrap_p05 0.0152→0.0169,
+    # decile spread 0.0045→0.0058 (all up, no harm) — but do NOT move the binding
+    # gates: Sharpe 0.852→0.838 (still <1.0) and streak unchanged at 7. The
+    # orthogonal signal improves *average* ranking but doesn't fix the momentum-
+    # crash *timing* (streak) or translate the IC gain into Sharpe. Kept as a
+    # real (if not gate-passing) improvement; confirms IC is improvable while
+    # Sharpe stays sticky (the IC→Sharpe translation is now the binding lever).
+    ArmSpec(
+        cli_alias="P",
+        canonical_name="long_only_top30_pv_formulaic_fundamentals_streakdial",
+        category="portfolio_candidate",
+        production_candidate=True,
+        panel_key="pv_form_fund",
+        requires_pca=False,
+        portfolio_config_factory=_long_only_top30_config,
+        fold_streak_risk_config_factory=_default_fold_streak_risk_config,
+    ),
+    # Arm Q = Arm G + CONVICTION weighting (the IC->Sharpe / transfer-coefficient
+    # lever, from "Quantitative Trading Strategies" Ch.12 + the Fundamental Law
+    # IR=IC*sqrt(BR)*TC). Same alpha/selection/dial/panel as G; only the per-name
+    # sizing differs: top-30 are sized by alpha conviction (score above the
+    # selection floor, shrunk 0.25 toward equal weight) instead of equal weight.
+    # OOS VERDICT (2026-05-29, normfixed universe-300): BREAKTHROUGH. Raising TC
+    # converts G's diffuse IC into Sharpe exactly as the Fundamental Law predicts.
+    # IC is UNCHANGED (selection identical → oos_ic 0.1586, ic_60d 0.063,
+    # bootstrap_p05 0.0152, streak 7 all identical to G), but Sharpe 0.852→1.0211
+    # (shrinkage-0.25, the sweep peak; CROSSES the 1.0 gate) and total_return
+    # 0.124→0.156 (+26%), DD ~−0.036, turnover ~flat. Q PASSES the v3 gate
+    # (oos_ic/ic_60d/streak≤9/DD/Sharpe/bootstrap_p05 all clear) — the FIRST
+    # portable LINEAR arm to do so (deploys via the existing pv_formulaic live
+    # port + ConvictionWeight, no PCA/GRU). The PRODUCTION LEAD. Thin margin
+    # (1.021); the cost framework (per-name √-impact + no-trade band) is the
+    # planned hardening. Distinct from Arm L (inverse-vol): L re-shaped RISK with
+    # no conviction and failed; Q adds conviction — that is the whole difference.
+    ArmSpec(
+        cli_alias="Q",
+        canonical_name="long_only_top30_pv_formulaic_streakdial_conviction",
+        category="portfolio_candidate",
+        production_candidate=True,
+        panel_key="pv_form",
+        requires_pca=False,
+        portfolio_config_factory=_long_only_top30_config,
+        fold_streak_risk_config_factory=_default_fold_streak_risk_config,
+        weighting_factory=_conviction_weight_factory,
+    ),
 )
 ARM_SPEC_BY_KEY: dict[str, ArmSpec] = {}
 for _spec in ARM_SPECS:
@@ -805,6 +927,68 @@ def compute_formulaic_alphas(bars: pd.DataFrame) -> tuple[pd.DataFrame, list[str
         }
     )
     return out, list(cols.keys())
+
+
+#: Evidence label for the Sharadar quality+value fundamentals panel (Arm P).
+FUND_FEATURE_SET_VERSION = "sharadar-quality-value-v1"
+
+
+def compute_fundamentals_panel(bars: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
+    """PIT quality+value fundamentals panel on the daily bar grid (Arm P).
+
+    Loads Sharadar SF1, computes the 9 quality+value features
+    (``research.fundamentals.compute_starter_features``), and per instrument
+    forward-fills the most-recent feature row whose ``datekey`` is strictly
+    before the trading day (tradable the session *after* the filing) via
+    ``merge_asof``. Returns ``(panel_df, feature_names)`` keyed
+    ``(instrument_id, date)`` to match the pv/formulaic panels. Instruments or
+    dates without a known filing carry ``NaN`` — the rank-normalizing scorer maps
+    those to the neutral median, so a name with no fundamentals is simply ranked
+    on its pv+formulaic features.
+    """
+    from quant_platform.research.fundamentals import (  # noqa: PLC0415
+        FEATURE_NAMES as _FUND_NAMES,
+    )
+    from quant_platform.research.fundamentals import (  # noqa: PLC0415
+        compute_starter_features,
+        load_sharadar_sf1_panel,
+    )
+
+    fund_names = list(_FUND_NAMES)
+    sf1 = load_sharadar_sf1_panel()
+    ff = compute_starter_features(sf1).frame.copy()
+    ff["instrument_id"] = ff["instrument_id"].astype(str)
+    datekey = pd.to_datetime(ff["datekey"])
+    if getattr(datekey.dt, "tz", None) is not None:
+        datekey = datekey.dt.tz_localize(None)
+    # Match the bars' datetime resolution so merge_asof keys are compatible
+    # (parquet bar timestamps load as datetime64[us]; pd.to_datetime is [ns]).
+    ff["datekey"] = datekey.astype("datetime64[ns]")
+    ff = ff[["instrument_id", "datekey", *fund_names]].sort_values("datekey")
+
+    grid = bars[["instrument_id", "date"]].copy()
+    grid["instrument_id"] = grid["instrument_id"].astype(str)
+    grid["date"] = grid["date"].astype("datetime64[ns]")
+    frames: list[pd.DataFrame] = []
+    for instrument_id, group in grid.groupby("instrument_id", sort=False):
+        per_inst = ff[ff["instrument_id"] == instrument_id]
+        if per_inst.empty:
+            continue
+        merged = pd.merge_asof(
+            group.sort_values("date"),
+            per_inst.drop(columns="instrument_id"),
+            left_on="date",
+            right_on="datekey",
+            direction="backward",
+            allow_exact_matches=False,  # tradable the session AFTER the filing
+        )
+        merged["instrument_id"] = instrument_id
+        frames.append(merged[["instrument_id", "date", *fund_names]])
+
+    if not frames:
+        empty = pd.DataFrame(columns=["instrument_id", "date", *fund_names])
+        return empty, fund_names
+    return pd.concat(frames, ignore_index=True), fund_names
 
 
 def fit_warmup_pca_artifact(
@@ -1895,6 +2079,10 @@ def main(argv: list[str] | None = None) -> int:
         **fsv_base,
         "regime": REGIME_FEATURE_SET_VERSION,
     }
+    fsv_with_fund: dict[str, str] = {
+        **fsv_base,
+        "fundamentals": FUND_FEATURE_SET_VERSION,
+    }
 
     # Panel registry: ``panel_key`` → (panel DataFrame, feature names,
     # feature_set_versions). ``full`` is only populated when PCA succeeded;
@@ -1939,6 +2127,37 @@ def main(argv: list[str] | None = None) -> int:
             pv_form_regime,
             pv_form_regime_names,
             fsv_with_regime,
+        )
+
+    # 5c. Fundamentals overlay panel (data-driven: only build when needed).
+    # Adds the 9 Sharadar quality+value features (PIT-aligned) onto the
+    # pv+formulaic panel — an alpha source orthogonal to momentum. Loading +
+    # PIT-joining SF1 costs a few seconds, so skip when no arm consumes it.
+    needs_fund = any(spec.panel_key == "pv_form_fund" for spec in requested_specs)
+    if needs_fund:
+        fund_arm_aliases = ",".join(
+            spec.cli_alias for spec in requested_specs if spec.panel_key == "pv_form_fund"
+        )
+        print(f"[5c] Computing Sharadar quality+value fundamentals (arms: {fund_arm_aliases}) ...")
+        t0 = time.monotonic()
+        fund_df, fund_names = compute_fundamentals_panel(bars)
+        fund_coverage = fund_df["instrument_id"].nunique() if not fund_df.empty else 0
+        print(
+            f"    fundamentals: {len(fund_df):,} rows × {len(fund_names)} features, "
+            f"{fund_coverage} instruments covered ({time.monotonic() - t0:.1f}s)"
+        )
+        # Left-merge onto pv+formulaic: names without SF1 coverage keep their
+        # pv+formulaic features and carry NaN fundamentals (neutral after rank).
+        pv_form_fund = pv_form.merge(
+            fund_df,
+            on=["instrument_id", "date"],
+            how="left",
+        )
+        pv_form_fund_names = source_names + fund_names
+        panel_registry["pv_form_fund"] = (
+            pv_form_fund,
+            pv_form_fund_names,
+            fsv_with_fund,
         )
 
     # Build the per-arm jobs from the panel registry. PCA-requiring arms

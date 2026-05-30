@@ -97,6 +97,20 @@ class BuiltInStrategyPlugin:
     #: Empty ⇒ the engine default (``close``); set it to bind a non-close family
     #: (e.g. ``pv-formulaic-live-v1`` for Arm G). See ``EngineConfig``.
     feature_set_version: str = ""
+    #: Conviction-weighting shrinkage. ``None`` ⇒ equal weight (default, every
+    #: existing plugin). Set it to size the top-N by alpha conviction (the
+    #: IC→Sharpe / transfer-coefficient lever, Arm Q — shrinkage 0.25 lifted
+    #: Sharpe 0.85→1.02 with the IC unchanged), via the shared core kernel the
+    #: research backtest also uses (parity by construction).
+    conviction_shrinkage: float | None = None
+    #: Governance identity for the model-registry preflight. When set, the engine
+    #: preflights against the PROMOTED model under this strategy name / model
+    #: version (the validated research-arm record) instead of its own engine_name /
+    #: version heartbeat. Both ``None`` ⇒ preflight uses the engine identity (every
+    #: existing plugin, unchanged). Set on Arm Q so ib-paper preflight matches the
+    #: promoted model without ``QP__RISK__REQUIRE_REGISTERED_MODEL_MATCH=false``.
+    registered_model_name: str | None = None
+    registered_model_version: str | None = None
 
     def build_signal_model(
         self,
@@ -110,6 +124,13 @@ class BuiltInStrategyPlugin:
         settings: PlatformSettings,
         max_positions: int,
     ) -> LongOnlyPortfolioConstructor:
+        # Conviction sizing takes precedence (it IS the alpha lever for Arm Q);
+        # vol-sizing is a separate risk re-shape and the two are not combined.
+        if self.conviction_shrinkage is not None:
+            return LongOnlyPortfolioConstructor(
+                top_n=max_positions,
+                conviction_shrinkage=self.conviction_shrinkage,
+            )
         if settings.vol_sizing.enabled:
             return VolTargetedPortfolioConstructor(
                 top_n=max_positions,
@@ -147,6 +168,8 @@ class BuiltInStrategyPlugin:
             feature_set_name=self.feature_spec.name,
             feature_set_version=self.feature_set_version,
             required_features=self.feature_spec.required_features,
+            registered_model_name=self.registered_model_name,
+            registered_model_version=self.registered_model_version,
             signal_model_factory=lambda w, v: self.build_signal_model(w, v),
             portfolio_constructor_factory=self.build_portfolio_constructor,
         )
@@ -249,6 +272,35 @@ _PLUGINS: dict[str, BuiltInStrategyPlugin] = {
         # Bind the live pv_formulaic family so the engine computes G's 20 features
         # (not the default ``close`` family).
         feature_set_version=PV_FORMULAIC_FEATURE_SET_VERSION,
+    ),
+    # Arm Q = Arm G + CONVICTION weighting (the production lead). Identical alpha
+    # (same pv_formulaic family, same G frozen IC weights, same top-30 selection)
+    # — only the SIZING differs: the top-30 are weighted by alpha conviction
+    # (shrinkage 0.25, the sweep peak) instead of equal weight. That single change
+    # lifted the backtest Sharpe 0.852→1.0211 with the IC unchanged (the IC→Sharpe
+    # / transfer-coefficient lever), making Q the first portable linear arm to
+    # clear the v3 gate. Deploys via the same pv_formulaic live port as arm_g;
+    # the conviction sizing flows through the shared core kernel (parity).
+    "arm_q": BuiltInStrategyPlugin(
+        name="arm_q_pv_formulaic_conviction_v1",
+        version="0.1.0",
+        feature_spec=FeatureSpec(
+            name="pv-formulaic-live",
+            version=PV_FORMULAIC_FEATURE_SET_VERSION,
+            required_features=_ARM_G_FEATURES,
+        ),
+        default_factor_weights=_ARM_G_FACTOR_WEIGHTS,
+        default_max_positions=30,
+        default_rebalance_interval_seconds=21 * 86400.0,
+        feature_set_version=PV_FORMULAIC_FEATURE_SET_VERSION,
+        conviction_shrinkage=0.25,
+        # Preflight against the PROMOTED governance record (the validated research
+        # arm), not the engine's own heartbeat — so ib-paper matches without the
+        # REQUIRE_REGISTERED_MODEL_MATCH bypass. Promoted via promote_latest_stack_arm.py:
+        #   strategy=long_only_top30_pv_formulaic_streakdial_conviction,
+        #   model_version=ic-weighted-non-negative (model_id 9f2ce193-…).
+        registered_model_name="long_only_top30_pv_formulaic_streakdial_conviction",
+        registered_model_version="ic-weighted-non-negative",
     ),
 }
 

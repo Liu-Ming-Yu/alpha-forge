@@ -1,6 +1,6 @@
 PYTHON ?= python3
 
-.PHONY: setup lint format-check typecheck test test-cov diff-check verify verify-online migrate-check docker-build-test backup-drill
+.PHONY: setup lint format-check typecheck test test-cov diff-check verify verify-online migrate-check docker-build-test backup-drill deploy
 
 setup:
 	$(PYTHON) -m pip install --upgrade pip
@@ -46,6 +46,11 @@ migrate-check:
 
 docker-build-test:
 	docker build --target runtime -t quant-platform:ci-test .
+
+# One-command full-stack deploy (backend + console). See scripts/deploy.sh.
+# On Windows use: pwsh scripts/deploy.ps1
+deploy:
+	bash scripts/deploy.sh
 
 backup-drill:
 	bash scripts/local_backup_drill.sh

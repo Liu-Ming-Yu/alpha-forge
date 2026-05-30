@@ -1,3 +1,19 @@
+# ── Stage 0: build the operator console SPA ──────────────────────────────────
+#
+# The browser console (ADR-013) is a static Vite/React bundle in ``ui/``. We
+# build it inside the image so a deploy needs no host Node toolchain. The built
+# ``/ui/dist`` is copied into the runtime stage and served by the operator API.
+FROM node:22-slim AS ui-builder
+
+WORKDIR /ui
+
+# Install against the lockfile first (cached unless deps change), then build.
+COPY ui/package.json ui/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+
+COPY ui/ ./
+RUN npm run build
+
 # ── Stage 1: build dependencies ──────────────────────────────────────────────
 #
 # Pin to a specific Python 3.11 patch version (matching the CI runner
@@ -48,6 +64,12 @@ COPY --chown=quant:quant src ./src
 COPY --chown=quant:quant alembic.ini ./alembic.ini
 COPY --chown=quant:quant scripts ./scripts
 COPY --chown=quant:quant infra ./infra
+
+# Operator console (ADR-013): the prebuilt SPA from the ui-builder stage.
+# ``QP__API__CONSOLE_DIST_DIR`` makes the path explicit so the API serves it
+# regardless of where the package is imported from inside the image.
+COPY --from=ui-builder --chown=quant:quant /ui/dist ./ui/dist
+ENV QP__API__CONSOLE_DIST_DIR=/app/ui/dist
 
 USER quant
 

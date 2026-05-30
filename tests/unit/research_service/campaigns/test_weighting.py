@@ -28,6 +28,7 @@ from quant_platform.services.research_service.campaigns.evaluation.walk_forward 
 )
 from quant_platform.services.research_service.campaigns.portfolio import (
     CampaignPortfolioConfig,
+    ConvictionWeight,
     EqualWeight,
     InverseVolWeight,
     WeightingScheme,
@@ -281,3 +282,72 @@ class TestWalkForwardWeighting:
                 feature_names=["alpha"],
                 weighting=InverseVolWeight(),
             )
+
+
+# -- 5. conviction weighting (Arm Q, the IC->Sharpe / TC lever) ------------------
+
+
+class TestConvictionWeight:
+    def test_satisfies_protocol(self) -> None:
+        assert isinstance(ConvictionWeight(), WeightingScheme)
+
+    def test_proportions_sum_to_one(self) -> None:
+        rows = [_row(0.75), _row(0.70), _row(0.66), _row(0.60)]
+        props = ConvictionWeight(shrinkage=0.0).proportions(rows)
+        assert sum(props) == pytest.approx(1.0)
+        assert all(p >= 0 for p in props)
+
+    def test_higher_score_gets_more_weight(self) -> None:
+        # The whole point: conviction tilt — the top-scored name gets the most.
+        rows = [_row(0.75), _row(0.70), _row(0.66), _row(0.60)]
+        props = ConvictionWeight(shrinkage=0.0).proportions(rows)
+        assert props[0] > props[1] > props[2] > props[3]
+
+    def test_reference_min_zeroes_marginal_name_pure(self) -> None:
+        # reference="min": the lowest selected score has conviction 0, so at zero
+        # shrinkage it receives no weight (the strongest names carry the book).
+        rows = [_row(0.75), _row(0.70), _row(0.60)]
+        props = ConvictionWeight(shrinkage=0.0, reference="min").proportions(rows)
+        assert props[-1] == pytest.approx(0.0)
+        assert props[0] > props[1] > 0.0
+
+    def test_shrinkage_interpolates_toward_equal(self) -> None:
+        rows = [_row(0.75), _row(0.70), _row(0.66), _row(0.60)]
+        pure = ConvictionWeight(shrinkage=0.0).proportions(rows)
+        half = ConvictionWeight(shrinkage=0.5).proportions(rows)
+        equal = 1.0 / len(rows)
+        # Half-shrunk top weight sits strictly between pure conviction and 1/N.
+        assert pure[0] > half[0] > equal
+        assert sum(half) == pytest.approx(1.0)
+
+    def test_shrinkage_one_is_equal_weight(self) -> None:
+        rows = [_row(0.75), _row(0.70), _row(0.60)]
+        props = ConvictionWeight(shrinkage=1.0).proportions(rows)
+        assert props == [pytest.approx(1 / 3)] * 3
+
+    def test_reference_zero_uses_raw_score(self) -> None:
+        # reference="zero": weight by the raw score, so even the lowest name gets
+        # positive pure weight (no flooring at the min).
+        rows = [_row(0.75), _row(0.60)]
+        props = ConvictionWeight(shrinkage=0.0, reference="zero").proportions(rows)
+        assert props[0] > props[1] > 0.0
+        assert sum(props) == pytest.approx(1.0)
+
+    def test_risk_adjust_combines_conviction_and_inverse_vol(self) -> None:
+        # With a vol_feature, conviction is divided by vol^2 (the book's α/d²).
+        # Equal conviction but different vol -> lower-vol name gets more.
+        rows = [_row(0.70, vol=0.01), _row(0.70, vol=0.04)]
+        props = ConvictionWeight(
+            shrinkage=0.0, reference="zero", vol_feature="low_vol_63d"
+        ).proportions(rows)
+        assert props[0] > props[1]
+        assert sum(props) == pytest.approx(1.0)
+
+    def test_empty(self) -> None:
+        assert ConvictionWeight().proportions([]) == []
+
+    def test_invalid_params(self) -> None:
+        with pytest.raises(ValueError, match="shrinkage"):
+            ConvictionWeight(shrinkage=1.5)
+        with pytest.raises(ValueError, match="reference"):
+            ConvictionWeight(reference="bogus")

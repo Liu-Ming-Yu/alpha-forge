@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 from pydantic import BaseModel, Field
 
 
@@ -23,6 +25,17 @@ class ExecutionSettings(BaseModel):
     """
 
     trading_hours_enforced: bool = False
+    rebalance_threshold: Decimal = Field(
+        default=Decimal("0.01"),
+        ge=Decimal("0"),
+        description=(
+            "Minimum |target_weight - current_weight| for the order planner to emit a "
+            "trade (turnover control). Default 1% suits concentrated books; a diffuse "
+            "N-name book (e.g. 30 names at ~0.7%/name under a conviction sizer) needs a "
+            "lower value (~0.1%) or its low-weight tail is silently skipped. "
+            "Set via QP__EXECUTION__REBALANCE_THRESHOLD."
+        ),
+    )
     passive_limit_enabled: bool = False
     reprice_interval_seconds: int = 300
     max_reprices_per_order: int = Field(

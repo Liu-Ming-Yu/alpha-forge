@@ -24,6 +24,7 @@ from quant_platform.services.research_service.campaigns.portfolio.volatility imp
     fit_fold_volatility_scale,
 )
 from quant_platform.services.research_service.campaigns.portfolio.weighting import (
+    ConvictionWeight,
     EqualWeight,
     InverseVolWeight,
     WeightingScheme,
@@ -32,6 +33,7 @@ from quant_platform.services.research_service.campaigns.portfolio.weighting impo
 __all__ = [
     "BufferedTopKSelection",
     "CampaignPortfolioConfig",
+    "ConvictionWeight",
     "EqualWeight",
     "FoldVolatilityScale",
     "InverseVolWeight",

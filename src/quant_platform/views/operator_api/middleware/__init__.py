@@ -22,7 +22,15 @@ if TYPE_CHECKING:
     from quant_platform.config import PlatformSettings
     from quant_platform.core.contracts import Clock, OperatorAuthRepository
 
-_AUTH_PUBLIC_PATHS = frozenset({"/health"})
+_AUTH_PUBLIC_PATHS = frozenset({"/health", "/console/info"})
+
+
+def _is_public_path(path: str) -> bool:
+    """Paths served without authentication: liveness, console bootstrap, and
+    the static SPA shell (``/`` and ``/app**``).  The shell must load before
+    the operator supplies a key; every protected JSON endpoint stays gated."""
+    return path in _AUTH_PUBLIC_PATHS or path == "/" or path == "/app" or path.startswith("/app/")
+
 
 MiddlewareCallNext = Callable[[Request], Awaitable[Response]]
 MiddlewareCallable = Callable[[Request, MiddlewareCallNext], Awaitable[Response]]
@@ -76,7 +84,7 @@ def _install_auth_middleware(
 
     @app.middleware("http")
     async def _auth_middleware(request: Request, call_next: MiddlewareCallNext) -> Response:
-        if request.url.path in _AUTH_PUBLIC_PATHS:
+        if _is_public_path(request.url.path):
             return await call_next(request)
         if not operator_api_key:
             return await call_next(request)
@@ -121,7 +129,9 @@ def _install_rate_limit_middleware(app: MiddlewareApp, *, rate_limit: int) -> No
 
     @app.middleware("http")
     async def _rate_limit_middleware(request: Request, call_next: MiddlewareCallNext) -> Response:
-        if request.url.path in ("/health", "/metrics"):
+        # Public/static console paths and Prometheus scrape do not consume the
+        # per-key API budget (SPA asset loads + live polling stay independent).
+        if request.url.path == "/metrics" or _is_public_path(request.url.path):
             return await call_next(request)
 
         key = (

@@ -35,6 +35,12 @@ pytest-output.txt
 venv
 env
 
+# --- Node deps (the ui-builder stage runs its own ``npm ci``) ---
+node_modules
+ui/node_modules
+ui/dist
+ui/.vite
+
 # --- Local secrets and runtime state ---
 .env
 .env.local

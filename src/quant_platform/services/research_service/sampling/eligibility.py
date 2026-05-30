@@ -52,6 +52,18 @@ def eligibility(
             thresholds.min_slippage_adjusted_sharpe,
         ),
     ]
+    if thresholds.min_bootstrap_ic_p05 is not None:
+        # Robustness gate (ADR-004 v3): the IC must be statistically positive —
+        # the 5th percentile of the block-bootstrapped fold-IC distribution above
+        # the bound. Replaces the brittle, OOS-unstable negative-IC-streak count.
+        checks.append(
+            (
+                "bootstrap_ic_p05",
+                metrics["bootstrap_ic_p05"] > thresholds.min_bootstrap_ic_p05,
+                metrics["bootstrap_ic_p05"],
+                thresholds.min_bootstrap_ic_p05,
+            )
+        )
     payload = [
         {"name": name, "passed": passed, "actual": actual, "threshold": threshold}
         for name, passed, actual, threshold in checks

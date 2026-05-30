@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 import structlog
 
+from quant_platform.core.algorithms.conviction import conviction_proportions
 from quant_platform.core.domain.portfolio import PortfolioTarget, RiskLimits
 from quant_platform.core.domain.signals import RegimeLabel, RegimeState, SignalScore
 
@@ -55,16 +56,26 @@ class LongOnlyPortfolioConstructor:
         sector_map: dict[uuid.UUID, str] | None = None,
         regime_scales: dict[RegimeLabel, Decimal] | None = None,
         no_trade_band: float = 0.0,
+        conviction_shrinkage: float | None = None,
+        conviction_reference: str = "min",
     ) -> None:
         if top_n < 1:
             raise ValueError("top_n must be >= 1")
         if no_trade_band < 0.0:
             raise ValueError("no_trade_band must be >= 0")
+        if conviction_shrinkage is not None and not 0.0 <= conviction_shrinkage <= 1.0:
+            raise ValueError("conviction_shrinkage must be in [0, 1]")
         self._top_n = top_n
         self._min_score = min_score_threshold
         self._sector_map = sector_map or {}
         self._scales = regime_scales if regime_scales is not None else dict(_DEFAULT_REGIME_SCALES)
         self._no_trade_band = no_trade_band
+        # ``None`` ⇒ equal weight (the behaviour-preserving default for every
+        # existing strategy). Set it to size the top-N by alpha conviction (the
+        # IC→Sharpe / transfer-coefficient lever, Arm Q) via the shared core
+        # kernel that the research backtest's ConvictionWeight also uses.
+        self._conviction_shrinkage = conviction_shrinkage
+        self._conviction_reference = conviction_reference
 
     def scale_for_regime(self, label: RegimeLabel) -> Decimal:
         """Return the capital scale used for a regime label."""
@@ -98,33 +109,50 @@ class LongOnlyPortfolioConstructor:
             return self._cash_target(strategy_run_id, regime, notes)
 
         selected = eligible[: self._top_n]
-        selected, weight_per_name = self._apply_name_cap(
-            selected=selected,
-            max_invest=max_invest,
-            limits=limits,
-            notes=notes,
-        )
-        if not selected:
+        if self._conviction_shrinkage is not None:
+            # Conviction sizing (Arm Q): per-name weights from the shared core
+            # kernel, capped per name. The sector cap (an equal-weight helper) is
+            # not applied here — it matches the backtest's long-only construction,
+            # which sizes by conviction without a sector cap.
+            weights = self._conviction_weights(selected, max_invest, limits)
+            if weights:
+                notes.append(
+                    f"conviction weighting (shrinkage={self._conviction_shrinkage}); "
+                    f"{len(weights)} names"
+                )
+        else:
+            selected, weight_per_name = self._apply_name_cap(
+                selected=selected,
+                max_invest=max_invest,
+                limits=limits,
+                notes=notes,
+            )
+            if not selected:
+                return self._cash_target(strategy_run_id, regime, notes)
+            selected = self._apply_sector_cap(
+                selected=selected,
+                weight_per_name=weight_per_name,
+                limits=limits,
+                notes=notes,
+            )
+            weights = {s.instrument_id: weight_per_name for s in selected}
+        if not weights:
             return self._cash_target(strategy_run_id, regime, notes)
-
-        selected = self._apply_sector_cap(
-            selected=selected,
-            weight_per_name=weight_per_name,
-            limits=limits,
-            notes=notes,
-        )
-        weights = {s.instrument_id: weight_per_name for s in selected}
         if self._no_trade_band > 0.0:
             weights = self._apply_no_trade_band(weights, account, notes)
         invested = sum(weights.values(), Decimal("0"))
         cash_target = Decimal("1") - invested
 
+        # ``weight_per_name`` is only defined on the equal-weight path; under
+        # conviction sizing the weights are unequal, so log the mean.
+        mean_weight = (invested / Decimal(str(len(weights)))) if weights else Decimal("0")
         log.info(
             "portfolio.built",
             n_names=len(weights),
             regime=regime.regime_label.value,
             regime_scale=str(scale),
-            weight_per_name=str(weight_per_name),
+            weighting=("conviction" if self._conviction_shrinkage is not None else "equal"),
+            mean_weight=str(mean_weight),
             invested=str(invested),
             cash_target=str(cash_target),
         )
@@ -137,6 +165,38 @@ class LongOnlyPortfolioConstructor:
             cash_target_weight=cash_target,
             construction_notes=notes,
         )
+
+    def _conviction_weights(
+        self,
+        selected: list[SignalScore],
+        max_invest: Decimal,
+        limits: RiskLimits,
+    ) -> dict[uuid.UUID, Decimal]:
+        """Size ``selected`` by alpha conviction, capped per name.
+
+        Delegates to the shared :func:`conviction_proportions` core kernel — the
+        exact arithmetic the research backtest's ``ConvictionWeight`` uses — so
+        live and backtest weights agree by construction (the parity discipline
+        the dollar-volume defect taught). Proportions × ``max_invest`` give raw
+        weights; each is clipped to ``max_single_name_weight`` (clipping only
+        reduces gross, never inflates — matching the backtest's
+        ``enforce_weight_limits``, since the proportions already sum to one).
+        """
+        if not selected:
+            return {}
+        shrinkage = 0.0 if self._conviction_shrinkage is None else self._conviction_shrinkage
+        proportions = conviction_proportions(
+            [float(score.score) for score in selected],
+            shrinkage=shrinkage,
+            reference=self._conviction_reference,
+        )
+        cap = limits.max_single_name_weight
+        weights: dict[uuid.UUID, Decimal] = {}
+        for score, proportion in zip(selected, proportions, strict=True):
+            weight = min(Decimal(str(proportion)) * max_invest, cap)
+            if weight > 0:
+                weights[score.instrument_id] = weight
+        return weights
 
     def _apply_name_cap(
         self,

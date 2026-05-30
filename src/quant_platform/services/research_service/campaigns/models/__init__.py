@@ -16,6 +16,7 @@ from quant_platform.services.research_service.campaigns.models.base import (
 )
 from quant_platform.services.research_service.campaigns.models.gbdt import GradientBoostedRanker
 from quant_platform.services.research_service.campaigns.models.linear import LinearICRanker
+from quant_platform.services.research_service.campaigns.models.robust_linear import RobustICRanker
 from quant_platform.services.research_service.campaigns.models.sequence import GRUSequenceRanker
 
 __all__ = [
@@ -24,4 +25,5 @@ __all__ = [
     "GRUSequenceRanker",
     "GradientBoostedRanker",
     "LinearICRanker",
+    "RobustICRanker",
 ]

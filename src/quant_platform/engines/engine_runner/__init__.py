@@ -167,18 +167,22 @@ class EngineRunner(EngineRunnerShadowMixin, EngineRunnerProposalMixin, EngineRun
 
         if self._session is None:
             raise RuntimeError("engine runtime session was not initialized")
+        # Preflight against the promoted governance record when the plugin declares
+        # one (Arm Q), else the engine's own heartbeat identity (every other plugin).
+        preflight_name = self._config.registered_model_name or self._config.engine_name
+        preflight_version = self._config.registered_model_version or self._config.engine_version
         if self._config.uses_order_capable_external_broker:
             await model_registry_preflight(
                 self._session,
-                strategy_name=self._config.engine_name,
-                engine_version=self._config.engine_version,
+                strategy_name=preflight_name,
+                engine_version=preflight_version,
                 require_match=True,
             )
         else:
             await model_registry_preflight(
                 self._session,
-                strategy_name=self._config.engine_name,
-                engine_version=self._config.engine_version,
+                strategy_name=preflight_name,
+                engine_version=preflight_version,
             )
         scheduled_job = await register_engine_model_and_schedule_job(
             self._model_registry,

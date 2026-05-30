@@ -76,6 +76,18 @@ class AlphaEligibilityThresholds:
     streak_containment_max_drawdown: float | None = None
     max_drawdown: float = -0.20
     min_slippage_adjusted_sharpe: float = 1.0
+    #: Minimum bootstrap 5th-percentile IC — the robustness gate that *replaces*
+    #: the brittle negative-IC-streak count for portfolio candidates (ADR-004
+    #: 2026-05-29). The held-out calibration proved the streak metric is not
+    #: OOS-stable (calibration-window streak 3 vs validation-window streak 7 on
+    #: the same arm), so a fixed streak cap cannot generalise. ``bootstrap_ic_p05``
+    #: — the 5th percentile of the block-bootstrapped fold-IC distribution —
+    #: tests the same concern ("is the predictive power *reliably* positive?")
+    #: with a statistically-grounded, regime-inclusive metric (the bootstrap
+    #: resamples span the crash episodes). ``> 0`` means "95% confident the IC is
+    #: positive". ``None`` (default) leaves the gate off, so callers/categories
+    #: predating the field are unaffected.
+    min_bootstrap_ic_p05: float | None = None
     #: Human-readable label for this threshold set. Serialised into the
     #: evidence JSON so a future auditor can identify "which named set
     #: was applied" without re-deriving it from the numeric values.
@@ -110,36 +122,38 @@ RESEARCH_RANKER_BASELINE_THRESHOLDS: AlphaEligibilityThresholds = AlphaEligibili
 #: with per-name + gross caps + monthly rebal). The construction absorbs
 #: negative-IC stretches without translating them into catastrophic P&L.
 #:
-#: Streak gate (ADR-004 addendum, 2026-05-28). The earlier ``streak <= 4``
-#: flat gate could not be validated out-of-sample — the held-out calibration
-#: showed ``4`` was reverse-engineered from the full sample and that the streak
-#: metric is regime-contingent (no fixed value generalises). It is replaced by
-#: a **drawdown-conditioned** gate: the strict floor is ``2`` (same as the
-#: baseline), but a streak up to ``6`` is tolerated *iff the drawdown during
-#: that streak stayed inside the −10% bound*. This earns the laxity per-episode
-#: from the construction's realized protection rather than granting it to any
-#: 4-streak. The ``6`` hard cap still rejects genuinely broken runs (e.g. the
-#: GBDT-rank arm's streak-9). DD gate stays −10% (vs the baseline's −20%): if a
-#: candidate's construction misbehaves, the DD gate fails first and the streak
-#: relaxation is simultaneously forfeit.
+#: Streak gate redesign (ADR-004, 2026-05-29). History: ``streak <= 4`` (v1) →
+#: drawdown-conditioned ``floor 2 / cap 6`` (v2). After the dollar-volume scoring
+#: fix (ADR-011) the held-out calibration on corrected evidence was decisive:
+#: the negative-IC-streak metric is **not OOS-stable** — the *same arm* shows a
+#: calibration-window streak of 3 and a validation-window streak of 7 (the
+#: 2024-summer crash episode falls entirely out-of-sample), and the only
+#: cal==val-stable cap is 9 (≈ no gate). A run-length count therefore cannot be
+#: a principled discriminator on this universe/label.
 #:
-#: This is the eligibility-threshold separation called out in
-#: ADR-003 ("per-category eligibility thresholds"); it lets governance
-#: distinguish "the alpha is dead" (baselines must clear) from
-#: "the alpha is noisy but the construction handles it" (candidates
-#: can clear).
+#: v3 replaces it with a **bootstrap-IC significance gate**: the streak count is
+#: demoted to a loose catastrophic backstop at the one OOS-stable value (``9``;
+#: it never binds for a sane arm), and the real robustness gate becomes
+#: ``min_bootstrap_ic_p05 > 0`` — the predictive power must be *statistically*
+#: positive (5th percentile of the block-bootstrapped fold-IC distribution above
+#: zero). That tests the same thing the streak gate intended ("is the alpha
+#: reliably positive across regimes?") but with a metric that is regime-inclusive
+#: by construction and does not depend on where an episode lands in the window.
+#: It is strict, not a rubber stamp: on the corrected A–N evidence it admits
+#: D (p05 +0.018) and N (+0.011) but rejects the GBDT-rank arm J (p05 −0.006)
+#: whose Sharpe-1.28 is driven by a single crash episode, not robust ranking.
+#:
+#: This is the eligibility-threshold separation called out in ADR-003; it lets
+#: governance distinguish "the alpha is dead" (baselines must clear) from "the
+#: alpha is reliably positive" (candidates can clear).
 PORTFOLIO_CANDIDATE_THRESHOLDS: AlphaEligibilityThresholds = AlphaEligibilityThresholds(
-    name="portfolio_candidate_v2",
-    max_fold_negative_ic_streak=2,
-    max_fold_negative_ic_streak_if_dd_contained=6,
-    # Tighter than the −10% full-run bound: a streak episode the construction
-    # truly absorbs leaves a small localized drawdown. Across the realized_v2
-    # A–J set every streak-≤6 candidate's within-streak drawdown was ≤1.4%
-    # (Arm G's was ~−0.3%), so −2% admits all genuinely-absorbed episodes with
-    # margin while still forfeiting the relaxation for any episode that actually
-    # bit the book. Operator-tunable via scripts/calibrate_eligibility_thresholds.py.
-    streak_containment_max_drawdown=-0.02,
+    name="portfolio_candidate_v3",
+    # Loose catastrophic backstop at the only OOS-stable cap (held-out
+    # calibration); the binding robustness gate is min_bootstrap_ic_p05 below.
+    max_fold_negative_ic_streak=9,
     max_drawdown=-0.10,
+    # The redesigned robustness gate: IC must be statistically-positive (95%).
+    min_bootstrap_ic_p05=0.0,
 )
 
 

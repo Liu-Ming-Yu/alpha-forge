@@ -24,6 +24,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
+from quant_platform.core.algorithms.conviction import conviction_proportions
+
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
@@ -161,4 +163,104 @@ class InverseVolWeight:
         }
 
 
-__all__ = ["EqualWeight", "InverseVolWeight", "WeightingScheme"]
+class ConvictionWeight:
+    """Conviction-proportional weighting — sizes by alpha conviction to raise the
+    **transfer coefficient** (the IC→Sharpe lever).
+
+    Fundamental Law of active management: ``IR ≈ IC · √BR · TC``, where TC is the
+    correlation between the *ideal* (conviction-implied) weights and the
+    *implemented* weights. Equal weight gives every top-N name ``1/N`` regardless
+    of how strongly the model likes it, so it discards conviction → low TC →
+    the IC fails to translate into Sharpe. This scheme tilts toward the
+    highest-scored names so the book carries the signal's conviction.
+
+    Distinct from :class:`InverseVolWeight` (Arm L), which sizes by ``1/vol``
+    only — a *risk* re-shape with **no alpha conviction** (it failed precisely
+    because it added no TC). Here the tilt is driven by the score; an optional
+    ``vol_feature`` risk-adjusts it toward the book's ``w ∝ α/d²`` form.
+
+    Construction (per selected name ``i`` with model score ``s_i``)::
+
+        a_i   = max(0, s_i - ref)                 # conviction above a reference
+        a_i  /= max(|vol_i|, vol_floor)**2         # optional risk-adjust (α/d²)
+        p_i   = a_i / Σ a                          # pure conviction proportions
+        w_i   = shrinkage·(1/N) + (1-shrinkage)·p_i
+
+    ``ref`` is the **minimum selected score** (``reference="min"``) so the
+    marginal name's conviction is ~0 and the strongest names carry the book; set
+    ``reference="zero"`` to weight by the raw score instead. ``shrinkage`` ∈ [0,1]
+    interpolates toward equal weight (1.0 == :class:`EqualWeight`) to blunt
+    estimation error — the same guardrail the book applies to optimized weights
+    ("1/N beats 14 optimizers OOS"). Selection is unchanged — only sizing — so
+    IC and the held set match the equal-weight arm; only the realized return /
+    Sharpe move.
+    """
+
+    __slots__ = ("_reference", "_shrinkage", "_vol_feature", "_vol_floor", "name")
+
+    def __init__(
+        self,
+        *,
+        shrinkage: float = 0.5,
+        reference: str = "min",
+        vol_feature: str | None = None,
+        vol_floor: float = 0.005,
+    ) -> None:
+        if not 0.0 <= shrinkage <= 1.0:
+            raise ValueError("shrinkage must be in [0, 1]")
+        if reference not in ("min", "zero"):
+            raise ValueError("reference must be 'min' or 'zero'")
+        if vol_floor <= 0.0:
+            raise ValueError("vol_floor must be > 0")
+        self._shrinkage = float(shrinkage)
+        self._reference = reference
+        self._vol_feature = vol_feature
+        self._vol_floor = float(vol_floor)
+        risk = f"-{vol_feature}" if vol_feature else ""
+        self.name = f"conviction-{reference}{risk}-s{shrinkage:g}"
+
+    def _vol(self, row: SupervisedAlphaSample, median: float) -> float:
+        if self._vol_feature is None:
+            return 1.0
+        value = row.features.get(self._vol_feature)
+        if value is None:
+            return median
+        vol = abs(float(value))
+        return vol if (vol == vol and vol != float("inf")) else median
+
+    def proportions(self, selected: Sequence[tuple[SupervisedAlphaSample, float]]) -> list[float]:
+        if not selected:
+            return []
+        scores = [score for _, score in selected]
+        risk: list[float] | None = None
+        if self._vol_feature is not None:
+            valid = sorted(
+                v
+                for v in (
+                    abs(float(row.features[self._vol_feature]))
+                    for row, _ in selected
+                    if self._vol_feature in row.features
+                )
+                if v == v and v != float("inf")
+            )
+            median = valid[len(valid) // 2] if valid else self._vol_floor
+            risk = [max(self._vol(row, median), self._vol_floor) ** 2 for row, _ in selected]
+        # Delegate the conviction arithmetic to the shared core kernel so the
+        # research backtest and the live LongOnlyPortfolioConstructor cannot
+        # diverge (parity-by-construction; see core.algorithms.conviction).
+        return conviction_proportions(
+            scores, shrinkage=self._shrinkage, reference=self._reference, risk=risk
+        )
+
+    def metadata(self) -> Mapping[str, object]:
+        return {
+            "name": self.name,
+            "type": "conviction",
+            "reference": self._reference,
+            "shrinkage": self._shrinkage,
+            "vol_feature": self._vol_feature,
+            "vol_floor": self._vol_floor,
+        }
+
+
+__all__ = ["ConvictionWeight", "EqualWeight", "InverseVolWeight", "WeightingScheme"]
