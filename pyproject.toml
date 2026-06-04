@@ -47,7 +47,7 @@ broker = []
 
 api = [
     "fastapi>=0.111,<0.136",
-    "starlette>=0.37.2,<0.47",
+    "starlette>=1.0.1,<1.1",
     "uvicorn[standard]>=0.29,<1",
 ]
 
